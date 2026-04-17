@@ -1,6 +1,6 @@
-import Review from "../models/Review.js";
+import Review from "../models/reviewModel.js";
 
-import Vehicle from "../models/Vehicle.js";
+import Vehicle from "../models/vechileModel.js";
 
 // Add Review (User Only) 
 export const addReview = async (req, res) => {

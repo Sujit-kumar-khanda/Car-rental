@@ -1,5 +1,5 @@
-import Booking from "../models/Booking.js";
-import Vehicle from "../models/Vehicle.js";
+import Booking from "../models/bookingModel.js";
+import Vehicle from "../models/vechileModel.js";
 
 // Create Booking (User Only)
 export const createBooking = async (req, res) => {

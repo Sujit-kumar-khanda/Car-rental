@@ -1,4 +1,4 @@
-import User from "../models/User";
+import User from "../models/userModel";
 
 // 🟣 6. GET PENDING ADMINS
 

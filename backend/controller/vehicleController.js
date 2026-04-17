@@ -1,4 +1,4 @@
-import Vehicle from "../models/Vehicle.js";
+import Vehicle from "../models/vechileModel.js";
 
 //  Add Vehicle (Admin Only)
 export const addVehicle = async (req, res) => {
