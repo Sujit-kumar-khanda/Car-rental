@@ -1,3 +1,4 @@
+import Booking from "../models/Booking";
 import User from "../models/User";
 
 // 🟣 6. GET PENDING ADMINS
@@ -111,3 +112,37 @@ export const deleteUser = async (req, res) => {
     res.status(500).json({ message: error.message });
   }
 };
+
+// 13. GET ALL BOOKINGS (SUPERADMIN ONLY)
+export const getAllBookings = async (req, res) => {
+  try {
+    const bookings = await Booking.find() // get every document of booking schema
+      .populate("user", "-password") // convert user id to user document and give all elements of user schema except password
+      .populate("vehicle") // convert vehicle id to vehicle document and give all elements of vehicle schema
+      .populate("createdBy", "-password")
+      .sort({ createdAt: -1 }); // sort by createdAt in descending order (latest first)
+
+    res.json(bookings);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// Get all delete Bookings (superadmin only)
+export const allDeleteBookings = async (req, res) => {
+  try{
+    const booking = await Booking.find({ $in: isDeleted});
+
+    const isSuperAdmin = req.user.role === "superadmin";
+
+    if(!isSuperAdmin){
+      return res.status(400).json({message: "Not Allowed"});
+    }
+
+    return res.status(200).json(booking)
+   
+  }catch(err){
+    res.status(500).json({message:err.message});
+  }
+};
+
