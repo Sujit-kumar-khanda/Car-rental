@@ -67,9 +67,10 @@ const vehicleSchema = new mongoose.Schema(
     },
 
     // 📊 Availability
-    isAvailable: {
-      type: Boolean,
-      default: true,
+    status: {
+      type: String,
+      enum: ["active", "inactive"],
+      default: "active",
     },
 
     // ⭐ Rating & Reviews

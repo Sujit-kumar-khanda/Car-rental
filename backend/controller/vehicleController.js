@@ -215,7 +215,6 @@ export const updateVehicle = async (req, res) => {
 
     Object.assign(vehicle, req.body); // Update vehicle fields with request body (only provided fields will be updated)
 
-    
     // 🖼️ handle images separately (Multer)
     if (req.files && req.files.length > 0) {
       // if new images are uploaded
@@ -250,20 +249,94 @@ export const updateVehicle = async (req, res) => {
 
 // Delete Entire Vehicle (Admin Only)
 export const deleteVehicle = async (req, res) => {
+  const session = await mongoose.startSession(); // create a session
+  session.startTransaction(); // This tells MongoDB: “Start a transaction — I want all upcoming operations to behave like a single unit.”
+
   try {
-    const vehicle = await Vehicle.findById(req.params.id);
+    const vehicle = await Vehicle.findById(req.params.id).session(session);
 
     if (!vehicle) {
+      await session.abortTransaction();
       return res.status(404).json({ message: "Vehicle not found" });
     }
 
-    await vehicle.deleteOne(); // delete the entire vehicle document from the database
+    const isSuperAdmin = req.user.role === "superadmin";
+    const isOwnerOfVehicle =
+      vehicle.createdBy.toString() === req.user._id.toString();
+
+    if (!isSuperAdmin && !isOwnerOfVehicle) {
+      await session.abortTransaction();
+      return res.status(403).json({ message: "Not allowed" });
+    }
+    vehicle.status = "inactive";
+    await vehicle.save({ session });
+
+    const now = new Date();
+    // refund only confirmed bookings before cancel all bookings
+    await Booking.updateMany(
+      {
+        vehicle: vehicle._id,
+        status: "confirmed", // BEFORE cancellation
+        "payment.status": "paid",
+        startDate: { $gt: now },
+      },
+      {
+        $set: {
+          status: "cancelled",
+          cancelReason: "Vehicle marked unavailable",
+          cancelledAt: now,
+
+          "payment.status": "refunded",
+          "payment.refundedAt": now,
+        },
+      },
+      { session }, // operation is a part of the transaction
+    );
+
+    // 🚨 2. Cancel future bookings
+    await Booking.updateMany(
+      {
+        vehicle: vehicle._id,
+        status: { $in: ["pending", "approved"] },
+        startDate: { $gt: now },
+      },
+      {
+        $set: {
+          status: "cancelled",
+          cancelReason: "Vehicle marked unavailable",
+          cancelledAt: now,
+        },
+      },
+      { session },
+    );
+
+    // ongoing bookings should still be cancelled But WITHOUT refund:
+    await Booking.updateMany(
+      {
+        vehicle: vehicle._id,
+        status: "ongoing",
+      },
+      {
+        $set: {
+          status: "cancelled",
+          cancelReason: "Trip interrupted due to vehicle unavailability",
+          cancelledAt: now,
+        },
+      },
+      { session },
+    );
+
+
+    await session.commitTransaction(); //“All the operations I did in this transaction are correct — save them permanently.”
 
     res.json({
-      message: "Vehicle deleted successfully",
+      message: "Vehicle marked as unavailable",
     });
   } catch (error) {
+    await session.abortTransaction(); // ✅ IMPORTANT
     res.status(500).json({ message: error.message });
+  } finally {
+    session.endSession(); // ✅ IMPORTANT
   }
 };
 

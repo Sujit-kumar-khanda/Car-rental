@@ -66,34 +66,16 @@ const bookingSchema = new mongoose.Schema(
     startDate: {
       type: Date,
       required: true,
-      validate: {
-        validator: function (value) {
-          const today = new Date();
-          today.setHours(0, 0, 0, 0);
-
-          const input = new Date(value);
-          input.setHours(0, 0, 0, 0);
-
-          return input >= today;
-        },
-        message: "Start date cannot be in the past",
-      },
     },
 
     endDate: {
       type: Date,
       required: true,
-      validate: {
-        validator: function (value) {
-          return value > this.startDate;
-        },
-        message: "End date must be after start date",
-      },
     },
+
     bookingType: {
       type: String,
       enum: ["hourly", "daily"],
-      default: "daily",
       required: true,
     },
 
@@ -131,25 +113,29 @@ const bookingSchema = new mongoose.Schema(
     },
 
     expiresAt: Date, // ⏰ Booking expiration for pending bookings
-    isExpired:{
-      type: Boolean,
-      default:false
-    },
 
     // 💳 Payment Details
     payment: {
-      paymentId: String,
-      orderId: String, // for Razorpay or similar gateways
+      paymentId: { type: String, index: true },
+      orderId: { type: String, index: true },
+
       method: {
         type: String,
         enum: ["card", "upi", "netbanking", "cash"],
       },
+
+      amount: Number,
+      currency: { type: String, default: "INR" },
+
       status: {
         type: String,
         enum: ["pending", "paid", "failed", "refunded"],
         default: "pending",
       },
+
       paidAt: Date,
+      refundAmount: Number,
+      refundedAt: Date,
     },
     // 🚫 Cancellation Details
     cancelledAt: Date,
@@ -161,38 +147,88 @@ const bookingSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
-    
   },
   {
     timestamps: true, // ✅ adds createdAt & updatedAt
   },
 );
 
-
 bookingSchema.pre("save", async function (next) {
+  try {
+    // Generate unique bookingId if not already set
+    if (!this.bookingId) {
+      let id;
+      let exists = true;
 
-  // Generate unique bookingId if not already set
-  if (!this.bookingId) {
-    let id;
-    let exists = true;
+      while (exists) {
+        id = `BK-${nanoid()}`;
+        exists = await mongoose.models.Booking.findOne({ bookingId: id });
+      }
 
-    while (exists) {
-      id = `BK-${nanoid()}`;
-      exists = await mongoose.models.Booking.findOne({ bookingId: id });
+      this.bookingId = id;
     }
 
-    this.bookingId = id;
-  }
+    // 📅 Validations
+    if (this.startDate < new Date()) {
+      return next(new Error("Start date must be in the future"));
+    }
 
-  // Set expiration for pending bookings (e.g. 24 hours )
-  if (!this.expiresAt) {
-    this.expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
-  }else{
-    this.isExpired = true;
+    if (this.endDate <= this.startDate) {
+      return next(new Error("End date must be after start date"));
+    }
+
+    // calculate booking type
+    const diffMs = this.endDate - this.startDate;
+    const diffHours = diffMs / (1000 * 60 * 60);
+
+    this.bookingType = diffHours <= 12 ? "hourly" : "daily"; // ALWAYS auto-determine booking type
+
+    //calculate duration
+    this.duration =
+      this.bookingType === "hourly"
+        ? Math.max(1, Math.ceil(diffHours))
+        : Math.max(1, Math.ceil(diffHours / 24));
+
+    // minimum advance booking time validation
+    // user cannot book a vehicle whose (startDate - bookingTime) < 30 minutes (daily Booking)
+    // user cannot book a vehicle whose (startDate - bookingTime) < 15 minutes (hourly Booking)
+    const minAdvanceTime =
+      this.bookingType === "hourly"
+        ? 15 * 60 * 1000 // 15 minutes
+        : 30 * 60 * 1000; // 30 minutes
+
+    if (this.startDate.getTime() - now.getTime() < minAdvanceTime) {
+      throw new Error(
+        `Booking must be at least ${
+          this.bookingType === "hourly" ? "15 minutes" : "30 minutes"
+        } before start time`,
+      );
+    }
+
+    const now = new Date();
+
+    // ⏱️ Expiry window based on booking type
+    const bufferTime =
+      this.bookingType === "hourly"
+        ? 30 * 60 * 1000 // 30 min
+        : 60 * 60 * 1000; // 1 hour
+
+    // Option 1: give user time after booking creation
+    const expiryFromNow = new Date(now.getTime() + bufferTime);
+
+    // Option 2: must expire before trip starts (safe cutoff)
+    const expiryBeforeStart = new Date(
+      this.startDate.getTime() - 10 * 60 * 1000, // 10 min before start
+    );
+
+    // Final expiry = earlier of the two
+    this.expiresAt =
+      expiryFromNow < expiryBeforeStart ? expiryFromNow : expiryBeforeStart;
+
+    next();
+  } catch (err) {
+    next(err);
   }
-  next();
 });
-
-
 
 export default mongoose.model("Booking", bookingSchema);

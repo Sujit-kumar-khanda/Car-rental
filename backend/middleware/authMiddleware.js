@@ -13,7 +13,7 @@ export const protectRoute = async (req, res, next) => {
   //2. verify token
   const decoded = jwt.verify(token, process.env.JWT_SECRET);
   if(!decoded){
-    return re.status(401).json({ message: "Unauthorized - Invalid token" });
+    return res.status(401).json({ message: "Unauthorized - Invalid token" });
   }
 
   //3. Get user from decoded token
