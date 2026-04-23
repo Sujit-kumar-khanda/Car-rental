@@ -1,7 +1,9 @@
-import Booking from "../models/Booking.js";
-import User from "../models/User.js";
-import Vehicle from "../models/Vehicle.js";
+
+import User from "../models/userModel.js";
+import Booking from "../models/bookingModel.js";
+import Vehicle from "../models/vechileModel.js";
 import { calculatePrice } from "../services/pricingService.js";
+
 
 // Create Booking (User Only)
 export const createBooking = async (req, res) => {

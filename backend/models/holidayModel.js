@@ -1,5 +1,5 @@
 import { mongo } from "mongoose";
-import {User} from "./User.js";
+import {User} from "./bookingModel.js";
 const holidaySchema = new mongoose.Schema(
   {
     name: { type: String, required: true },

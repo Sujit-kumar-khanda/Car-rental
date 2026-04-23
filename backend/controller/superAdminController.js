@@ -1,8 +1,8 @@
-import Booking from "../models/Booking";
-import User from "../models/User";
+import Booking from "../models/bookingModel.js";
+import User from "../models/userModel.js";
+import Vehicle from "../models/vechileModel.js";
 
 // 🟣 6. GET PENDING ADMINS
-
 export const getPendingApprovals = async (req, res) => {
   try {
     const pendingApprovals = await User.find({

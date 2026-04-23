@@ -1,14 +1,9 @@
-import User from "../models/User.js";
+import User from "../models/userModel.js";
 import bcrypt from "bcryptjs";
-import jwt from "jsonwebtoken";
+import {generateToken} from "../config/jwt.js";
 import * as validator from "validator";
 
-// 🔐 Generate Token
-const generateToken = (id) => {
-  return jwt.sign({ id }, process.env.JWT_SECRET, {
-    expiresIn: "7d",
-  });
-};
+
 
 // 🟢 1. REGISTER USER (ONLY BASIC INFO)
 export const registerUser = async (req, res) => {
@@ -58,9 +53,12 @@ export const registerUser = async (req, res) => {
     });
 
     const userData = await User.findById(user._id).select("-password");
-    res.status(201).json({
+
+    // set cookie
+    generateToken(user._id, res); // sets cookie in response
+
+    res.status(201).json({ // sends response → cookie goes to browser here
       message: "User registered successfully",
-      token: generateToken(user._id),
       user: userData,
     });
   } catch (error) {
@@ -89,10 +87,11 @@ export const loginUser = async (req, res) => {
       return res.status(400).json({ message: "Invalid credentials" });
     }
 
+    // set cookie
+    generateToken(user._id, res);
     const userData = await User.findById(user._id).select("-password");
     res.json({
       message: "Login successful",
-      token: generateToken(user._id),
       user: userData,
     });
   } catch (error) {
@@ -201,3 +200,12 @@ export const requestAdmin = async (req, res) => {
     res.status(500).json({ message: error.message });
   }
 };
+
+// 6. Logout user
+export const LogoutUser = async (req, res) => {
+  res.cookie("jwt", "", {
+    maxAge:0,
+  });
+
+  res.json({message: "Logged out successfully"});
+}

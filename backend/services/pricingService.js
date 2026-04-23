@@ -1,4 +1,4 @@
-import Holiday from "../models/Holiday.js";
+import Holiday from "../models/holidayModel.js";
 
 export const calculatePrice = async (
   vehicle,
