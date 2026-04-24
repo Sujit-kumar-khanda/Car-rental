@@ -23,7 +23,7 @@ export const createBooking = async (req, res) => {
       return res.status(404).json({ message: "Vehicle not found" });
     }
 
-    if (!vehicle.isAvailable) {
+    if (vehicle.status === "inactive") {
       return res.status(400).json({ message: "Vehicle not available" });
     }
 

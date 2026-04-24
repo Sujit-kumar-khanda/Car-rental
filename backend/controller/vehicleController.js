@@ -1,4 +1,6 @@
+import User from "../models/userModel.js";
 import Vehicle from "../models/vechileModel.js";
+import mongoose from "mongoose";
 
 //  Add Vehicle (Admin Only)
 export const addVehicle = async (req, res) => {
@@ -181,7 +183,36 @@ export const addVehicle = async (req, res) => {
 // Get All Vehicles (Public)
 export const getAllVehicles = async (req, res) => {
   try {
-    const vehicles = await Vehicle.find({ isAvailable: true }); // Only return available vehicles for listing
+    const vehicles = await Vehicle.find({ status: "active" }); // Only return available vehicles for listing
+
+    res.json(vehicles);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// Get All Vehicles (admin only)
+export const getAllVendorVehicles = async (req, res) => {
+  try {
+    const { type } = req.query;
+
+    const user = await User.findById(req.user.id);
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    // Build filter dynamically
+    let filter = { createdBy: user._id };
+
+    if (type) {
+      filter.type = type; // Car or Bike
+    }
+
+    const vehicles = await Vehicle.find(filter);
+
+    if (vehicles.length === 0) {
+      return res.status(404).json({ message: "No vehicles found" });
+    }
 
     res.json(vehicles);
   } catch (error) {
@@ -192,9 +223,16 @@ export const getAllVehicles = async (req, res) => {
 // Get Vehicle by ID (Public)
 export const getVehicleById = async (req, res) => {
   try {
-    const vehicle = await Vehicle.findById(req.params.id);
+    const { id } = req.params;
 
-    if (!vehicle) {
+    //Check valid ObjectId
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ message: "Invalid vehicle ID" });
+    }
+
+    const vehicle = await Vehicle.findById(id);
+
+    if (!vehicle || vehicle.status === "inactive") {
       return res.status(404).json({ message: "Vehicle not found" });
     }
 
@@ -247,96 +285,137 @@ export const updateVehicle = async (req, res) => {
   }
 };
 
-// Delete Entire Vehicle (Admin Only)
+// Delete Vehicle (Admin and Superadmin)
 export const deleteVehicle = async (req, res) => {
-  const session = await mongoose.startSession(); // create a session
-  session.startTransaction(); // This tells MongoDB: “Start a transaction — I want all upcoming operations to behave like a single unit.”
+  const session = await mongoose.startSession();
 
   try {
-    const vehicle = await Vehicle.findById(req.params.id).session(session);
+    const { id } = req.params;
+
+    // Validate ObjectId
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ message: "Invalid vehicle ID" });
+    }
+
+    await session.withTransaction(async () => {
+      const vehicle = await Vehicle.findById(id).session(session);
+
+      if (!vehicle) {
+        throw new Error("Vehicle not found");
+      }
+
+      if (vehicle.status === "inactive") {
+        throw new Error("Vehicle already inactive");
+      }
+
+      const isSuperAdmin = req.user.role === "superadmin";
+      const isOwner = vehicle.createdBy.toString() === req.user._id.toString();
+
+      if (!isSuperAdmin && !isOwner) {
+        return res.status(403).json({ message: "Not allowed" });
+      }
+
+      // Mark vehicle inactive
+      vehicle.status = "inactive";
+      await vehicle.save({ session });
+
+      const now = new Date();
+
+      // Refund confirmed future bookings
+      await Booking.updateMany(
+        {
+          vehicle: vehicle._id,
+          status: "confirmed",
+          "payment.status": "paid",
+          startDate: { $gt: now },
+        },
+        {
+          $set: {
+            status: "cancelled",
+            cancelReason: "Vehicle unavailable",
+            cancelledAt: now,
+            "payment.status": "refunded",
+            "payment.refundedAt": now,
+          },
+        },
+        { session },
+      );
+
+      // 🚨 2. Cancel future bookings
+      await Booking.updateMany(
+        {
+          vehicle: vehicle._id,
+          status: { $in: ["pending", "approved"] },
+          startDate: { $gt: now },
+        },
+        {
+          $set: {
+            status: "cancelled",
+            cancelReason: "Vehicle marked unavailable",
+            cancelledAt: now,
+          },
+        },
+        { session },
+      );
+
+      // Cancel ongoing (no refund)
+      await Booking.updateMany(
+        {
+          vehicle: vehicle._id,
+          status: "ongoing",
+        },
+        {
+          $set: {
+            status: "interrupted", // new status
+            cancelReason: "Vehicle became unavailable during trip",
+            cancelledAt: now,
+          },
+        },
+        { session },
+      );
+    });
+
+    res.json({ message: "Vehicle marked as unavailable" });
+  } catch (error) {
+    res.status(400).json({ message: error.message });
+  } finally {
+    session.endSession();
+  }
+};
+
+// Restore Vehicle (admin nad Superadmin Only)
+export const restoreVehicle = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    // Validate ObjectId
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ message: "Invalid vehicle ID" });
+    }
+
+    const vehicle = await Vehicle.findById(id);
 
     if (!vehicle) {
-      await session.abortTransaction();
-      return res.status(404).json({ message: "Vehicle not found" });
+      return res.status(400).json({ message: "Vehicle not Found" });
     }
 
     const isSuperAdmin = req.user.role === "superadmin";
-    const isOwnerOfVehicle =
-      vehicle.createdBy.toString() === req.user._id.toString();
+    const isOwner = vehicle.createdBy.toString() === req.user._id.toString();
 
-    if (!isSuperAdmin && !isOwnerOfVehicle) {
-      await session.abortTransaction();
+    if (!isSuperAdmin && !isOwner) {
       return res.status(403).json({ message: "Not allowed" });
     }
-    vehicle.status = "inactive";
-    await vehicle.save({ session });
 
-    const now = new Date();
-    // refund only confirmed bookings before cancel all bookings
-    await Booking.updateMany(
-      {
-        vehicle: vehicle._id,
-        status: "confirmed", // BEFORE cancellation
-        "payment.status": "paid",
-        startDate: { $gt: now },
-      },
-      {
-        $set: {
-          status: "cancelled",
-          cancelReason: "Vehicle marked unavailable",
-          cancelledAt: now,
+    if (vehicle.status === "active") {
+      return res.status(400).json({ message: "Vehicle already active" });
+    }
 
-          "payment.status": "refunded",
-          "payment.refundedAt": now,
-        },
-      },
-      { session }, // operation is a part of the transaction
-    );
+    vehicle.status = "active";
+    await vehicle.save();
 
-    // 🚨 2. Cancel future bookings
-    await Booking.updateMany(
-      {
-        vehicle: vehicle._id,
-        status: { $in: ["pending", "approved"] },
-        startDate: { $gt: now },
-      },
-      {
-        $set: {
-          status: "cancelled",
-          cancelReason: "Vehicle marked unavailable",
-          cancelledAt: now,
-        },
-      },
-      { session },
-    );
-
-    // ongoing bookings should still be cancelled But WITHOUT refund:
-    await Booking.updateMany(
-      {
-        vehicle: vehicle._id,
-        status: "ongoing",
-      },
-      {
-        $set: {
-          status: "cancelled",
-          cancelReason: "Trip interrupted due to vehicle unavailability",
-          cancelledAt: now,
-        },
-      },
-      { session },
-    );
-
-
-    await session.commitTransaction(); //“All the operations I did in this transaction are correct — save them permanently.”
-
-    res.json({
-      message: "Vehicle marked as unavailable",
-    });
+    res.json({ message: "Vehicle Restored Successfully" });
   } catch (error) {
-    await session.abortTransaction(); // ✅ IMPORTANT
-    res.status(500).json({ message: error.message });
-  } finally {
-    session.endSession(); // ✅ IMPORTANT
+    res.status(400).json({ message: error.message });
   }
 };
 
@@ -368,14 +447,53 @@ export const deleteVehicleImage = async (req, res) => {
 // Toggle Vehicle Availability (Admin Only)
 export const toggleAvailability = async (req, res) => {
   try {
-    const vehicle = await Vehicle.findById(req.params.id);
+    const { id } = req.params;
+
+    // Validate ObjectId
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ message: "Invalid vehicle ID" });
+    }
+
+    const vehicle = await Vehicle.findById(id);
 
     if (!vehicle) {
       return res.status(404).json({ message: "Vehicle not found" });
     }
 
-    vehicle.isAvailable = !vehicle.isAvailable;
+    // 🔐 Authorization
+    const isSuperAdmin = req.user.role === "superadmin";
+    const isOwner = vehicle.createdBy.toString() === req.user._id.toString();
 
+    if (!isSuperAdmin && !isOwner) {
+      return res.status(403).json({ message: "Not allowed" });
+    }
+
+    // Prevent enabling inactive vehicle
+    if (vehicle.status === "inactive") {
+      return res.status(400).json({
+        message: "Inactive vehicle cannot be made available",
+      });
+    }
+
+    const now = new Date();
+
+    if (!vehicle.isAvailable) {
+      const conflict = await Booking.findOne({
+        vehicle: vehicle._id,
+        status: { $in: ["confirmed", "ongoing"] },
+        startDate: { $lte: now },
+        endDate: { $gte: now },
+      });
+
+      if (conflict) {
+        return res.status(400).json({
+          message: "Vehicle is currently booked or in use",
+        });
+      }
+    }
+
+    // Toggle
+    vehicle.isAvailable = !vehicle.isAvailable;
     await vehicle.save();
 
     res.json({
