@@ -1,5 +1,5 @@
 import jwt from 'jsonwebtoken';
-import User from '../models/userModel';
+import User from '../models/userModel.js';
 
 export const protectRoute = async (req, res, next) => {
   try{
@@ -12,21 +12,31 @@ export const protectRoute = async (req, res, next) => {
 
   //2. verify token
   const decoded = jwt.verify(token, process.env.JWT_SECRET);
-  if(!decoded){
-    return re.status(401).json({ message: "Unauthorized - Invalid token" });
-  }
+
+  // if(!decoded){
+  //   return res.status(401).json({ message: "Unauthorized - Invalid token" });
+  // }
 
   //3. Get user from decoded token
-  const user = await User.findById(decoded.userId).select("-password");
+  const user = await User.findById(decoded.userId).select("_id name email role isApprovedVendor");
 
   if(!user){
-    return res.status(404).json({ message: "User not found"});
+    return res.status(401).json({ message: "User not found"});
   }
 
   req.user = user;
   next();
+
 } catch(err){
+  if(err.name === "TokenExpiredError") {
+    return res.status(401).json({ message: "Session expired. Login again."});
+  }
+  if(err.name === "JsonWebTokenError"){
+    return res.status(401).json({ message: "Invalid token"})
+  }
+  
   console.log("Error in authMiddleware", err.message);
-    res.status(500).json({ message: "Server Error" });
+  
+  res.status(500).json({ message: "Server Error" });
   }
 }

@@ -1,51 +1,80 @@
 import Review from "../models/reviewModel.js";
-
 import Vehicle from "../models/vechileModel.js";
 
-// Add Review (User Only) 
+// ⭐ Common Helper Function
+const updateVehicleReviewStats = async (vehicleId) => {
+  // get only visible reviews
+  const reviews = await Review.find({
+    vehicle: vehicleId,
+    isHidden: false,
+  });
+
+  const totalReviews = reviews.length;
+
+  const avgRating =
+    totalReviews === 0
+      ? 0
+      : reviews.reduce((sum, review) => sum + review.rating, 0) /
+        totalReviews;
+
+  const vehicle = await Vehicle.findById(vehicleId);
+
+  if (vehicle) {
+    vehicle.totalReviews = totalReviews;
+    vehicle.rating = avgRating;
+
+    await vehicle.save();
+  }
+
+  return {
+    totalReviews,
+    rating: avgRating,
+  };
+};
+
+// Add Review (User Only)
 export const addReview = async (req, res) => {
   try {
-    const { rating, comment } = req.body;
+    const { rating, comment, booking } = req.body;
+    const { vehicleId } = req.params;
 
-    const vehicle = await Vehicle.findById(req.params.vehicleId);
+    const vehicle = await Vehicle.findById(vehicleId);
 
     if (!vehicle) {
       return res.status(404).json({ message: "Vehicle not found" });
     }
 
+    // Validate rating
+    if (!rating || rating < 1 || rating > 5) {
+      return res.status(400).json({
+        message: "Rating must be between 1 and 5",
+      });
+    }
+
     // create review
     await Review.create({
       user: req.user.id,
-      vehicle: req.params.carId,
+      vehicle: vehicleId,
+      booking,
       rating,
-      comment
+      comment,
     });
 
-    // get only visible reviews
-    const reviews = await Review.find({
-      vehicle: req.params.carId,
-      isHidden: false
-    });
-
-    const totalReviews = reviews.length;
-
-    const avgRating =
-      totalReviews === 0
-        ? 0
-        : reviews.reduce((sum, r) => sum + r.rating, 0) / totalReviews;
-
-    vehicle.totalReviews = totalReviews;
-    vehicle.rating = avgRating;
-
-    await vehicle.save();
+    const stats = await updateVehicleReviewStats(vehicleId);
 
     res.status(201).json({
       message: "Review added successfully",
-      totalReviews,
-      rating: avgRating
+      totalReviews: stats.totalReviews,
+      rating: stats.rating,
     });
-
   } catch (error) {
+    // duplicate review error
+    if (error.code === 11000) {
+      return res.status(409).json({
+        message: "You already reviewed this vehicle",
+      });
+    }
+
     res.status(500).json({ message: error.message });
   }
 };
@@ -53,15 +82,17 @@ export const addReview = async (req, res) => {
 // Get Reviews for a vehicle (Public) and show in ui
 export const getVehicleReviews = async (req, res) => {
   try {
-    const reviews = await Review.find({ // give all elements of review schema which have vehicle id and isHidden false
-      vehicle: req.params.vehicleId,
-      isHidden: false
+    const { vehicleId } = req.params;
+
+    const reviews = await Review.find({
+      // give all elements of review schema which have vehicle id and isHidden false
+      vehicle: vehicleId,
+      isHidden: false,
     })
       .populate("user", "name profileImage") // only show user name and profile image
       .sort({ createdAt: -1 }); // latest first
 
     res.json(reviews);
-
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -79,32 +110,12 @@ export const hideReview = async (req, res) => {
     review.isHidden = true;
     await review.save();
 
-    // give all documents of review schema which have same vehicle id and isHidden false
-    const reviews = await Review.find({
-      vehicle: review.vehicle,
-      isHidden: false
+    await updateVehicleReviewStats(review.vehicle);
+
+    res.json({
+      message: "Review hidden successfully",
     });
-
-    // get only one document of vehicle schema which have same id as review.vehicle
-    const vehicle = await Vehicle.findById(review.vehicle);
-
-    // total number of reviews which are not hidden and given by users
-
-    const totalReviews = reviews.length; 
-    const avgRating =
-      totalReviews === 0
-        ? 0
-        : reviews.reduce((sum, r) => sum + r.rating, 0) / totalReviews;
-
-    vehicle.totalReviews = totalReviews;
-    vehicle.rating = avgRating;
-
-    await vehicle.save();
-
-    res.json({ message: "Review hidden successfully" });
-
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
 };
-

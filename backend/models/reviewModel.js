@@ -16,6 +16,10 @@ const reviewSchema = new mongoose.Schema(
       required: true,
     },
 
+    booking:{
+    type:mongoose.Schema.Types.ObjectId,
+    ref:"Booking"
+  },
     // ⭐ Rating (1 to 5)
     rating: {
       type: Number,
@@ -28,6 +32,8 @@ const reviewSchema = new mongoose.Schema(
     comment: {
       type: String,
       trim: true,
+      default: "",
+      maxlength: 1000,
     },
     isHidden: {
       type: Boolean,
@@ -38,5 +44,8 @@ const reviewSchema = new mongoose.Schema(
     timestamps: true,
   },
 );
+
+reviewSchema.index({ user:1, vehicle:1 }, { unique:true });
+reviewSchema.index({ vehicle:1, createdAt:-1 });
 
 export default mongoose.model("Review", reviewSchema);

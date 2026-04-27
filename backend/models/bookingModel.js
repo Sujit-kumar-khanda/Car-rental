@@ -54,13 +54,42 @@ const bookingSchema = new mongoose.Schema(
     // 📊 Booking Status
     status: {
       type: String,
-      enum: ["pending", "approved", "cancelled"],
+      enum: [
+        "pending",
+        "approved",
+        "cancelled",
+        "completed",
+        "rejected"
+      ],
       default: "pending",
     },
+    pickupAddress: String,
+    dropAddress: String,
+
+    securityDeposit: {
+      type: Number,
+      default: 0
+    },
+
+    cancelReason: {
+      type: String,
+      default: ""
+    },
+    approvedAt: Date,
+    cancelledAt: Date,
+    completedAt: Date
   },
   {
     timestamps: true, // ✅ adds createdAt & updatedAt
   },
 );
 
+
+bookingSchema.index({ user: 1, createdAt: -1 });
+bookingSchema.index({ vehicle: 1, startDate: 1, endDate: 1 });
+bookingSchema.index({ status: 1 });
+bookingSchema.index({ bookingId: 1 });
+
 export default mongoose.model("Booking", bookingSchema);
+
+

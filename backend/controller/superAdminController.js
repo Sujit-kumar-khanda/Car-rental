@@ -1,13 +1,19 @@
-import User from "../models/userModel";
+// controllers/superAdminController.js
+
+import {
+  getPendingApprovalsService,
+  approveAdminService,
+  rejectAdminService,
+  getAllApprovedVendorsService,
+  getAllPendingVendorsService,
+  getAllUsersService,
+  deleteUserService,
+} from "../services/superAdminService.js";
 
 // 🟣 6. GET PENDING ADMINS
-
 export const getPendingApprovals = async (req, res) => {
   try {
-    const pendingApprovals = await User.find({
-      role: "admin",
-      isApprovedVendor: false,
-    }).select("-password");
+    const pendingApprovals = await getPendingApprovalsService();
 
     return res.status(200).json({ pendingApprovals });
   } catch (error) {
@@ -16,59 +22,32 @@ export const getPendingApprovals = async (req, res) => {
 };
 
 // 🟣 7. SUPERADMIN APPROVE VENDOR
-
 export const approveAdmin = async (req, res) => {
   try {
-    const user = await User.findById(req.params.id);
+    const result = await approveAdminService(req.params.id);
 
-    if (!user) return res.status(404).json({ message: "User not found" });
-    if (user.role !== "admin") {
-      return res.status(400).json({ message: "User is not an admin" });
-    }
-
-    if (user.isApprovedVendor) {
-      return res.status(400).json({ message: "Already approved" });
-    }
-
-    user.isApprovedVendor = true;
-    await user.save();
-
-    return res.json({ message: "Admin approved successfully" });
+    return res.json(result);
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    res.status(400).json({ message: error.message });
   }
 };
 
 // 🟣 8. SUPERADMIN REJECT VENDOR
 export const rejectAdmin = async (req, res) => {
   try {
-    // find the user by id from the request parameters bcz fronted only store token of superadmin after login and when superadmin click on approve or reject button then send the user id of the admin to be approved or rejected in the request parameters
-    const user = await User.findById(req.params.id);
+    const result = await rejectAdminService(req.params.id);
 
-    if (!user) return res.status(404).json({ message: "User not found" });
-
-    if (user.role !== "admin") {
-      return res.status(400).json({ message: "User is not an admin" });
-    }
-
-    user.role = "user"; // demote back to user
-    user.isApprovedVendor = false;
-
-    await user.save();
-
-    return res.json({ message: "Admin rejected successfully" });
+    return res.json(result);
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    res.status(400).json({ message: error.message });
   }
 };
 
 // 🟣 9. GET ALL APPROVED VENDORS
 export const getAllApprovedVendors = async (req, res) => {
   try {
-    const approvedVendors = await User.find({
-      role: "admin",
-      isApprovedVendor: true,
-    }).select("-password");
+    const approvedVendors = await getAllApprovedVendorsService();
+
     return res.status(200).json({ approvedVendors });
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -78,10 +57,8 @@ export const getAllApprovedVendors = async (req, res) => {
 // 🟣 10. GET ALL PENDING VENDORS
 export const getAllPendingVendors = async (req, res) => {
   try {
-    const pendingVendors = await User.find({
-      role: "admin",
-      isApprovedVendor: false,
-    }).select("-password");
+    const pendingVendors = await getAllPendingVendorsService();
+
     return res.status(200).json({ pendingVendors });
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -91,23 +68,21 @@ export const getAllPendingVendors = async (req, res) => {
 // 🟣 11. GET ALL USERS
 export const getAllUsers = async (req, res) => {
   try {
-    const users = await User.find({ role: { $ne: "superadmin" } }).select(
-      "-password",
-    );
+    const users = await getAllUsersService();
+
     return res.status(200).json({ users });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
 };
 
-// 🟣 12. DELETE USER (SUPERADMIN ONLY)
+// 🟣 12. DELETE USER
 export const deleteUser = async (req, res) => {
   try {
-    const user = await User.findById(req.params.id);
-    if (!user) return res.status(404).json({ message: "User not found" });
-    await user.deleteOne();
-    return res.json({ message: "User deleted successfully" });
+    const result = await deleteUserService(req.params.id);
+
+    return res.json(result);
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    res.status(400).json({ message: error.message });
   }
 };
