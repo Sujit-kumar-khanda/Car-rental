@@ -1,161 +1,25 @@
-import Vehicle from "../models/vehicleModel.js";
+// ==========================================
+// services/vehicleService.js
+// FULL INDUSTRY LEVEL VERSION
+// Matches your latest Vehicle Model + Booking Model
+// ==========================================
 
-// Add Vehicle
+import mongoose from "mongoose";
+import Vehicle from "../models/vechileModel.js";
+import Booking from "../models/bookingModel.js";
+
+// ==========================================
+// ADD VEHICLE
+// ==========================================
 export const addVehicleService = async (req) => {
-  let {
+  const {
     name,
     brand,
     model,
     year,
-    type,
-    pricePerDay,
-    pricePerHour,
-    fuelType,
-    transmission,
-    seats,
-    mileage,
-    color,
-    city,
-    state,
-    pickupAddress,
-    description,
-    category,
     segment,
     features,
-    securityDeposit,
-  } = req.body;
-
-  const images = req.files
-    ? req.files.map((file) => `uploads/${file.filename}`)
-    : []; // Handle multiple image uploads
-
-  // Validate required fields
-  if (
-    !name ||
-    !brand ||
-    !year ||
-    !type ||
-    !pricePerDay ||
-    !fuelType ||
-    !city ||
-    !category
-  ) {
-    throw new Error("Please fill in all required fields");
-  }
-
-  // seat is required for cars but not for bikes
-  if (type === "Car" && (!seats || isNaN(seats) || seats <= 0)) {
-    throw new Error("Seats required for car");
-  }
-
-  // Validate field formats and values
-  if (!["Petrol", "Diesel", "Electric", "Hybrid"].includes(fuelType)) {
-    throw new Error("Invalid fuel type");
-  }
-
-  // ✅ Category validation based on type
-  let allowedCategories = [];
-
-  if (type === "Car") {
-    allowedCategories = [
-      "SUV",
-      "Sedan",
-      "Hatchback",
-      "Coupe",
-      "Convertible",
-      "Pickup",
-      "Van",
-      "Crossover",
-      "Minivan",
-      "Roadster",
-    ];
-  }
-
-  if (type === "Bike") {
-    allowedCategories = [
-      "Commuter",
-      "Sport",
-      "Naked",
-      "Cruiser",
-      "Touring",
-      "Adventure",
-      "Scooter",
-      "Offroad",
-      "Cafe Racer",
-      "Scrambler",
-      "Supermoto",
-    ];
-  }
-
-  // validate
-  const normalized = category.trim().toLowerCase();
-
-  // find matching category in allowedCategories (case-insensitive)
-  const matchedCategory = allowedCategories.find(
-    (c) => c.toLowerCase() === normalized,
-  );
-
-  if (!matchedCategory) {
-    throw new Error(`Invalid category for ${type}`);
-  }
-
-  category = matchedCategory;
-
-  // Validate transmission type
-  if (type === "Car" && transmission) {
-    const normalizedTransmission = transmission.trim().toLowerCase();
-
-    const matched = ["Manual", "Automatic"].find(
-      (t) => t.toLowerCase() === normalizedTransmission,
-    );
-
-    if (!matched) {
-      throw new Error("Invalid transmission type");
-    }
-
-    transmission = matched;
-  }
-
-  // Ignore transmission for bike
-  if (type === "Bike") {
-    transmission = undefined;
-  }
-
-  // Validate year, price, seats, mileage, features, description
-  if (isNaN(year) || year < 1886 || year > new Date().getFullYear() + 1) {
-    throw new Error("Invalid year");
-  }
-
-  if (isNaN(pricePerDay) || pricePerDay <= 0) {
-    throw new Error("Price per day must be a positive number");
-  }
-
-  if (pricePerHour && (isNaN(pricePerHour) || pricePerHour <= 0)) {
-    throw new Error("Invalid price per hour");
-  }
-
-  if (mileage && typeof mileage !== "string") {
-    throw new Error("Mileage must be a string (e.g. '18 km/l')");
-  }
-
-  if (features && typeof features !== "string") {
-    throw new Error(
-      "Features must be a comma-separated string (e.g. 'GPS,Air Conditioning,Bluetooth')",
-    );
-  }
-
-  if (description && typeof description !== "string") {
-    throw new Error("Description must be a string");
-  }
-
-  // SAME DB QUERY AS PREVIOUS
-  return await Vehicle.create({
-    name,
-    brand,
-    model,
-    year,
     type,
-    owner: req.user.id,
     pricePerDay,
     pricePerHour,
     securityDeposit,
@@ -164,28 +28,95 @@ export const addVehicleService = async (req) => {
     seats,
     mileage,
     color,
+    images,
     city,
     state,
     pickupAddress,
-    description,
     category,
+    description,
+  } = req.body;
+
+  const vehicle = await Vehicle.create({
+    name,
+    brand,
+    model,
+    year,
     segment,
-    features: features ? features.split(",") : [], // convert comma-separated string to array example: "GPS,Air Conditioning,Bluetooth" --> ["GPS", "Air Conditioning", "Bluetooth"]
+    features,
+    type,
+    owner: req.user.id,
+
+    pricePerDay,
+    pricePerHour,
+    securityDeposit,
+
+    fuelType,
+    transmission,
+    seats,
+    mileage,
+    color,
+
     images,
+
+    city,
+    state,
+    pickupAddress,
+
+    category,
+    description,
+
+    status: "inactive", // default to inactive until approved by admin
+    approvalStatus: "pending",
+    isAvailable: false,
   });
+
+  return vehicle;
 };
 
-// Get All Vehicles (Public)
-export const getAllVehiclesService = async () => {
-  return await Vehicle.find({ isAvailable: true, approvalStatus: "approved" });
+// ==========================================
+// GET ALL VEHICLES (FILTER + SEARCH)
+// ==========================================
+export const getAllVehiclesService = async (query) => {
+  const filter = {
+    approvalStatus: "approved",
+    status: "active",
+    isAvailable: true,
+  };
+
+  if (query.city) filter.city = query.city;
+  if (query.type) filter.type = query.type;
+  if (query.brand) filter.brand = query.brand;
+  if (query.category) filter.category = query.category;
+  if (query.segment) filter.segment = query.segment;
+
+  const vehicles = await Vehicle.find(filter).sort({
+    createdAt: -1,
+  });
+
+  return vehicles;
 };
 
-// Get Vehicle by ID (Public)
+// ==========================================
+// GET SINGLE VEHICLE
+// ==========================================
 export const getVehicleByIdService = async (id) => {
-  return await Vehicle.findById(id);
+  if (!mongoose.Types.ObjectId.isValid(id)) {
+    throw new Error("Invalid vehicle ID");
+  }
+
+  const vehicle = await Vehicle.findById(id);
+
+  if (!vehicle || vehicle.status !== "active") {
+    throw new Error("Vehicle not found");
+  }
+
+  return vehicle;
 };
 
-// Update Vehicle
+// ==========================================
+// UPDATE VEHICLE
+// Only Owner or Superadmin
+// ==========================================
 export const updateVehicleService = async (req) => {
   const vehicle = await Vehicle.findById(req.params.id);
 
@@ -193,27 +124,68 @@ export const updateVehicleService = async (req) => {
     throw new Error("Vehicle not found");
   }
 
-  Object.assign(vehicle, req.body); // Update vehicle fields with request body (only provided fields will be updated)
+  const isOwner = vehicle.owner.toString() === req.user.id;
+  const isSuperAdmin = req.user.role === "superadmin";
 
-  // 🖼️ handle images separately (Multer)
-  if (req.files && req.files.length > 0) {
-    // if new images are uploaded
-    const newImages = req.files.map(
-      // convert uploaded files to image URLs
-      (file) => `uploads/${file.filename}`,
-    );
+  if (!isOwner && !isSuperAdmin) {
+    throw new Error("Not allowed");
+  }
 
-    // 🔥 check admin choice
-    const replaceImages = req.body.replaceImages === "true";
+  // Only allow safe editable fields
+  const allowedFields = [
+    "name",
+    "brand",
+    "model",
+    "year",
+    "segment",
+    "features",
+    "type",
+    "pricePerDay",
+    "pricePerHour",
+    "securityDeposit",
+    "fuelType",
+    "transmission",
+    "seats",
+    "mileage",
+    "color",
+    "images",
+    "city",
+    "state",
+    "pickupAddress",
+    "category",
+    "description",
+  ];
 
-    // if true, replace old images with new ones; if false, add new images to existing ones
-    if (replaceImages) {
-      // replace old images
-      vehicle.images = newImages;
-    } else {
-      // add extra images
-      vehicle.images = [...vehicle.images, ...newImages];
+  // Fields that require re-approval
+  const approvalFields = [
+    "pricePerDay",
+    "pricePerHour",
+    "city",
+    "images",
+    "fuelType",
+    "category",
+    "type",
+  ];
+
+  let needsReapproval = false;
+
+  allowedFields.forEach((field) => {
+    if (req.body[field] !== undefined) {
+      vehicle[field] = req.body[field];
+
+      if (approvalFields.includes(field)) {
+        needsReapproval = true;
+      }
     }
+  });
+
+  // If sensitive data changed, send for approval again
+  if (needsReapproval) {
+    vehicle.approvalStatus = "pending";
+    vehicle.status = "inactive";
+    vehicle.isAvailable = false;
+    vehicle.approvedBy = null;
+    vehicle.approvedAt = null;
   }
 
   await vehicle.save();
@@ -221,21 +193,120 @@ export const updateVehicleService = async (req) => {
   return vehicle;
 };
 
-// Delete Entire Vehicle
-export const deleteVehicleService = async (id) => {
-  const vehicle = await Vehicle.findById(id);
+// ==========================================
+// DELETE VEHICLE / MAKE INACTIVE
+// ==========================================
+export const deleteVehicleService = async (vehicleId, user) => {
+  const session = await mongoose.startSession();
+  session.startTransaction();
 
-  if (!vehicle) {
-    throw new Error("Vehicle not found");
+  try {
+    const vehicle = await Vehicle.findById(vehicleId).session(session);
+
+    if (!vehicle) {
+      throw new Error("Vehicle not found");
+    }
+
+    const isOwner = vehicle.owner.toString() === user.id;
+    const isSuperAdmin = user.role === "superadmin";
+
+    if (!isOwner && !isSuperAdmin) {
+      throw new Error("Not allowed");
+    }
+
+    if (vehicle.status === "inactive") {
+      throw new Error("Vehicle already inactive");
+    }
+
+    const now = new Date();
+
+    // Make vehicle unavailable
+    vehicle.status = "inactive";
+    vehicle.isAvailable = false;
+
+    // ------------------------------------
+    // Cancel future pending / approved bookings
+    // ------------------------------------
+    await Booking.updateMany(
+      {
+        vehicle: vehicle._id,
+        status: { $in: ["pending", "approved"] },
+        startDate: { $gt: now },
+      },
+      {
+        $set: {
+          status: "cancelled",
+          cancelReason: "Vehicle unavailable",
+          cancelledAt: now,
+        },
+      },
+      { session }
+    );
+
+    // ------------------------------------
+    // Refund future confirmed paid bookings
+    // ------------------------------------
+    const confirmedBookings = await Booking.find(
+      {
+        vehicle: vehicle._id,
+        status: "confirmed",
+        startDate: { $gt: now },
+        "payment.status": "paid",
+      },
+      null,
+      { session }
+    );
+
+    for (const booking of confirmedBookings) {
+      booking.status = "cancelled";
+      booking.cancelReason = "Vehicle unavailable";
+      booking.cancelledAt = now;
+
+      booking.payment.status = "refunded";
+      booking.payment.refundAmount =
+        booking.pricePaidByCustomer;
+      booking.payment.refundedAt = now;
+
+      await booking.save({ session });
+    }
+
+    // ------------------------------------
+    // Interrupt ongoing trips
+    // ------------------------------------
+    await Booking.updateMany(
+      {
+        vehicle: vehicle._id,
+        status: "ongoing",
+      },
+      {
+        $set: {
+          status: "interrupted",
+          cancelReason:
+            "Vehicle became unavailable during trip",
+          cancelledAt: now,
+        },
+      },
+      { session }
+    );
+
+    await vehicle.save({ session });
+
+    await session.commitTransaction();
+    session.endSession();
+
+    return true;
+  } catch (error) {
+    await session.abortTransaction();
+    session.endSession();
+    throw error;
   }
-
-  await vehicle.deleteOne(); // delete the entire vehicle document from the database
 };
 
-// Delete Specific Vehicle Image
+// ==========================================
+// DELETE SINGLE IMAGE
+// ==========================================
 export const deleteVehicleImageService = async (req) => {
-  const { image } = req.body; // image path to delete .it is not a file.path but a string in the images array of the vehicle document (e.g. "uploads/vehicle1.jpg")
-
+  const { imageUrl } = req.body;
 
   const vehicle = await Vehicle.findById(req.params.id);
 
@@ -243,20 +314,44 @@ export const deleteVehicleImageService = async (req) => {
     throw new Error("Vehicle not found");
   }
 
-  // ❌ remove specific image from array
-  vehicle.images = vehicle.images.filter((img) => img !== image);
+  const isOwner = vehicle.owner.toString() === req.user.id;
+  const isSuperAdmin = req.user.role === "superadmin";
+
+  if (!isOwner && !isSuperAdmin) {
+    throw new Error("Not allowed");
+  }
+
+  vehicle.images = vehicle.images.filter(
+    (img) => img !== imageUrl
+  );
 
   await vehicle.save();
 
   return vehicle.images;
 };
 
-// Toggle Vehicle Availability
-export const toggleAvailabilityService = async (id) => {
-  const vehicle = await Vehicle.findById(id);
+// ==========================================
+// TOGGLE AVAILABILITY
+// ==========================================
+export const toggleAvailabilityService = async (
+  vehicleId,
+  user
+) => {
+  const vehicle = await Vehicle.findById(vehicleId);
 
   if (!vehicle) {
     throw new Error("Vehicle not found");
+  }
+
+  const isOwner = vehicle.owner.toString() === user.id;
+  const isSuperAdmin = user.role === "superadmin";
+
+  if (!isOwner && !isSuperAdmin) {
+    throw new Error("Not allowed");
+  }
+
+  if (vehicle.status !== "active") {
+    throw new Error("Only active vehicle can change availability");
   }
 
   vehicle.isAvailable = !vehicle.isAvailable;
@@ -266,3 +361,50 @@ export const toggleAvailabilityService = async (id) => {
   return vehicle.isAvailable;
 };
 
+// ==========================================
+// APPROVE VEHICLE (SUPERADMIN)
+// ==========================================
+export const approveVehicleService = async (
+  vehicleId,
+  adminId
+) => {
+  const vehicle = await Vehicle.findById(vehicleId);
+
+  if (!vehicle) {
+    throw new Error("Vehicle not found");
+  }
+
+  vehicle.approvalStatus = "approved";
+  vehicle.status = "active";
+  vehicle.isAvailable = true;
+  vehicle.approvedBy = adminId;
+  vehicle.approvedAt = new Date();
+
+  await vehicle.save();
+
+  return vehicle;
+};
+
+// ==========================================
+// REJECT VEHICLE
+// ==========================================
+export const rejectVehicleService = async (
+  vehicleId,
+  adminId
+) => {
+  const vehicle = await Vehicle.findById(vehicleId);
+
+  if (!vehicle) {
+    throw new Error("Vehicle not found");
+  }
+
+  vehicle.approvalStatus = "rejected";
+  vehicle.status = "inactive";
+  vehicle.isAvailable = false;
+  vehicle.approvedBy = adminId;
+  vehicle.approvedAt = new Date();
+
+  await vehicle.save();
+
+  return vehicle;
+};

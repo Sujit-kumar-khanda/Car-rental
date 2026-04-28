@@ -58,6 +58,12 @@ const vehicleSchema = new mongoose.Schema(
       required: true,
       index: true,
     },
+
+    status: {
+      type: String,
+      enum: ["active", "inactive", "maintenance", "blocked"],
+      default: "active"
+    },
     owner: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
@@ -140,7 +146,6 @@ const vehicleSchema = new mongoose.Schema(
 
 
     // 📍 Location
-    // Location
     city: {
       type: String,
       required: true,
