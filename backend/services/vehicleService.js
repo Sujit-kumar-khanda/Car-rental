@@ -1,4 +1,4 @@
-import Vehicle from "../models/vechileModel.js";
+import Vehicle from "../models/vehicleModel.js";
 
 // Add Vehicle
 export const addVehicleService = async (req) => {
