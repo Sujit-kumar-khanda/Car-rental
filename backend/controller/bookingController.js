@@ -39,7 +39,7 @@ export const approveBooking = async (req, res) => {
   }
 };
 
-// Cancel Booking (User or Admin)
+// Cancel Booking (User or Admin or superAdmin)
 export const cancelBooking = async (req, res) => {
   try {
     const booking = await cancelBookingService(req);
@@ -82,8 +82,8 @@ export const getUserBookings = async (req, res) => {
   }
 };
 
-// Get All Bookings (Admin Only)
-export const getAllBookings = async (req, res) => {
+// Get Vehicle's Bookings (admin only)
+export const getVehicleBookings = async (req, res) => {
   try {
     const bookings = await getAllBookingsService();
 
@@ -122,3 +122,4 @@ export const deleteBooking = async (req, res) => {
     ).json({ message: error.message });
   }
 };
+

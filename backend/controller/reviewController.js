@@ -101,10 +101,27 @@ export const getVehicleReviews = async (req, res) => {
 // Hide Review (Admin Only)
 export const hideReview = async (req, res) => {
   try {
+    if (req.user.role !== "admin" && req.user.role !== "superadmin") {
+      return res.status(403).json({ message: "Access denied" });
+    }
     const review = await Review.findById(req.params.id);
 
     if (!review) {
       return res.status(404).json({ message: "Review not found" });
+    }
+
+    if (review.isHidden) {
+      return res.status(400).json({ message: "Review already hidden" });
+    }
+     const vehicle = await Vehicle.findById(review.vehicle);
+
+    if (!vehicle) {
+      return res.status(404).json({ message: "Vehicle not found" });
+    }
+    if (req.user.role === "admin") {
+      if (vehicle.createdBy.toString() !== req.user.id) {
+        return res.status(403).json({ message: "Not allowed" });
+      }
     }
 
     review.isHidden = true;

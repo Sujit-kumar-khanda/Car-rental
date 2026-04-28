@@ -38,7 +38,14 @@ export const getVehicleById = async (req, res) => {
   try {
     const vehicle = await getVehicleByIdService(req.params.id);
 
-    if (!vehicle) {
+    //Check valid ObjectId
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ message: "Invalid vehicle ID" });
+    }
+
+    const vehicle = await Vehicle.findById(id);
+
+    if (!vehicle || vehicle.status === "inactive") {
       return res.status(404).json({ message: "Vehicle not found" });
     }
 
@@ -64,14 +71,87 @@ export const updateVehicle = async (req, res) => {
   }
 };
 
-// Delete Entire Vehicle (Admin Only)
+// Delete Vehicle (Admin and Superadmin)
 export const deleteVehicle = async (req, res) => {
   try {
     await deleteVehicleService(req.params.id);
 
-    res.json({
-      message: "Vehicle deleted successfully",
+      if (!vehicle) {
+        throw new Error("Vehicle not found");
+      }
+
+      if (vehicle.status === "inactive") {
+        throw new Error("Vehicle already inactive");
+      }
+
+      const isSuperAdmin = req.user.role === "superadmin";
+      const isOwner = vehicle.createdBy.toString() === req.user._id.toString();
+
+      if (!isSuperAdmin && !isOwner) {
+        return res.status(403).json({ message: "Not allowed" });
+      }
+
+      // Mark vehicle inactive
+      vehicle.status = "inactive";
+      await vehicle.save({ session });
+
+      const now = new Date();
+
+      // Refund confirmed future bookings
+      await Booking.updateMany(
+        {
+          vehicle: vehicle._id,
+          status: "confirmed",
+          "payment.status": "paid",
+          startDate: { $gt: now },
+        },
+        {
+          $set: {
+            status: "cancelled",
+            cancelReason: "Vehicle unavailable",
+            cancelledAt: now,
+            "payment.status": "refunded",
+            "payment.refundedAt": now,
+          },
+        },
+        { session },
+      );
+
+      // 🚨 2. Cancel future bookings
+      await Booking.updateMany(
+        {
+          vehicle: vehicle._id,
+          status: { $in: ["pending", "approved"] },
+          startDate: { $gt: now },
+        },
+        {
+          $set: {
+            status: "cancelled",
+            cancelReason: "Vehicle marked unavailable",
+            cancelledAt: now,
+          },
+        },
+        { session },
+      );
+
+      // Cancel ongoing (no refund)
+      await Booking.updateMany(
+        {
+          vehicle: vehicle._id,
+          status: "ongoing",
+        },
+        {
+          $set: {
+            status: "interrupted", // new status
+            cancelReason: "Vehicle became unavailable during trip",
+            cancelledAt: now,
+          },
+        },
+        { session },
+      );
     });
+
+    res.json({ message: "Vehicle marked as unavailable" });
   } catch (error) {
     res.status(
       error.message === "Vehicle not found" ? 404 : 400,
