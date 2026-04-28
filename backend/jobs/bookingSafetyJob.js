@@ -25,8 +25,9 @@ export const startBookingSafetyJob = () => {
       // 🔍 Find all bookings that should already be expired
       const result = await Booking.updateMany(
         {
-          status: "pending",
+          status: { $in: ["pending", "approved"] },
           expiresAt: { $lt: now },
+          isDeleted: false
         },
         {
           $set: {
