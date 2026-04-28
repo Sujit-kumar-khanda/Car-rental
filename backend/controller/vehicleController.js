@@ -149,14 +149,11 @@ export const deleteVehicle = async (req, res) => {
         },
         { session },
       );
-    });
-
-    res.json({ message: "Vehicle marked as unavailable" });
-  } catch (error) {
+    } catch (error) {
     res.status(
       error.message === "Vehicle not found" ? 404 : 400,
     ).json({ message: error.message });
-  }
+  } 
 };
 
 // Delete Specific Vehicle Image (Admin Only)
