@@ -1,6 +1,6 @@
 import User from "../models/userModel.js";
 
-// GET PROFILE
+// 1 - GET PROFILE
 export const getUserProfileService = async (userId) => {
   const user = await User.findById(userId);
 
@@ -11,7 +11,8 @@ export const getUserProfileService = async (userId) => {
   return user;
 };
 
-// UPDATE PROFILE
+
+// 2 - UPDATE PROFILE
 export const updateUserProfileService = async (
   userId,
   body,
@@ -67,7 +68,7 @@ export const updateUserProfileService = async (
   return user;
 };
 
-// REQUEST VENDOR ROLE
+// 3 - REQUEST VENDOR ROLE
 export const requestVendorService = async (userId) => {
   const user = await User.findById(userId);
 

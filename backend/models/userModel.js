@@ -41,6 +41,11 @@ const userSchema = new mongoose.Schema(
       default: "none",
     },
 
+    isApprovedVendor: {
+      type: Boolean,
+      default: false,
+    },
+
     // 📞 Contact Info
     phone: {
       type: String,

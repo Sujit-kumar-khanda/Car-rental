@@ -30,4 +30,5 @@ const holidaySchema = new mongoose.Schema(
   { timestamps: true },
 );
 
+
 export default mongoose.model("Holiday", holidaySchema);

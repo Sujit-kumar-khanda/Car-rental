@@ -2,15 +2,17 @@
 
 import {
   getPendingApprovalsService,
-  approveAdminService,
-  rejectAdminService,
+  approveVendorService,
+  rejectVendorService,
   getAllApprovedVendorsService,
   getAllPendingVendorsService,
   getAllUsersService,
   deleteUserService,
+  getAllBookingService,
+  allDeletedBookingsService,
 } from "../services/superAdminService.js";
 
-// 🟣 6. GET PENDING ADMINS
+//  4 - GET PENDING ADMINS
 export const getPendingApprovals = async (req, res) => {
   try {
     const pendingApprovals = await getPendingApprovalsService();
@@ -21,10 +23,10 @@ export const getPendingApprovals = async (req, res) => {
   }
 };
 
-// 🟣 7. SUPERADMIN APPROVE VENDOR
-export const approveAdmin = async (req, res) => {
+// 5 -  SUPERADMIN APPROVE VENDOR
+export const approveVendor = async (req, res) => {
   try {
-    const result = await approveAdminService(req.params.id);
+    const result = await approveVendorService(req.params.id);
 
     return res.json(result);
   } catch (error) {
@@ -32,10 +34,10 @@ export const approveAdmin = async (req, res) => {
   }
 };
 
-// 🟣 8. SUPERADMIN REJECT VENDOR
+// 6 -  SUPERADMIN REJECT VENDOR
 export const rejectAdmin = async (req, res) => {
   try {
-    const result = await rejectAdminService(req.params.id);
+    const result = await rejectVendorService(req.params.id);
 
     return res.json(result);
   } catch (error) {
@@ -43,7 +45,7 @@ export const rejectAdmin = async (req, res) => {
   }
 };
 
-// 🟣 9. GET ALL APPROVED VENDORS
+// 7 -  GET ALL APPROVED VENDORS
 export const getAllApprovedVendors = async (req, res) => {
   try {
     const approvedVendors = await getAllApprovedVendorsService();
@@ -54,7 +56,7 @@ export const getAllApprovedVendors = async (req, res) => {
   }
 };
 
-// 🟣 10. GET ALL PENDING VENDORS
+// 8 -  GET ALL PENDING VENDORS
 export const getAllPendingVendors = async (req, res) => {
   try {
     const pendingVendors = await getAllPendingVendorsService();
@@ -65,7 +67,7 @@ export const getAllPendingVendors = async (req, res) => {
   }
 };
 
-// 🟣 11. GET ALL USERS
+// 9 -  GET ALL USERS
 export const getAllUsers = async (req, res) => {
   try {
     const users = await getAllUsersService();
@@ -76,7 +78,7 @@ export const getAllUsers = async (req, res) => {
   }
 };
 
-// 🟣 12. DELETE USER
+// 10 -  DELETE USER
 export const deleteUser = async (req, res) => {
   try {
     const result = await deleteUserService(req.params.id);
@@ -86,3 +88,47 @@ export const deleteUser = async (req, res) => {
     res.status(400).json({ message: error.message });
   }
 };
+
+
+// 11 - GET ALL BOOKINGS (ADMIN)
+export const getAllBookings = async (
+  req,
+  res
+) => {
+  try {
+    const bookings =
+      await bookingService.getAllBookingsService();
+
+    return res.status(200).json({
+      success: true,
+      count: bookings.length,
+      bookings,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
+// 12 - GET ALL DELETED BOOKINGS (ADMIN)
+export const getAllDeletedBookings = async (req,res) => {
+  try {
+    const bookings = await bookingService.allDeletedBookingsService();
+
+    return res.status(200).json({
+      success: true,
+      count: bookings.length,
+      bookings,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
+
+

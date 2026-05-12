@@ -4,4 +4,7 @@ export const checkVendorApproval = (req, res, next) => {
       message: "Vendor not approved yet",
     });
   }
+
+  next();
 }
+
