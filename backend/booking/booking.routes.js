@@ -19,7 +19,7 @@ router.get("/:bookingNumber", protect, bookingController.getBookingById);
 //cancel booking
 router.put("/cancel/:bookingNumber", protect, bookingController.cancelBooking);
 
-
+ 
 // =========== vendor routes ===========
 
 //All booking of vendor's vehicles
