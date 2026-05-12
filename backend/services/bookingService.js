@@ -4,6 +4,7 @@ import User from "../models/userModel.js";
 import Holiday from "../models/holidayModel.js";
 import { calculatePrice } from "./pricingService.js";
 
+
 // CREATE BOOKING
 export const createBookingService = async (req) => {
   const {
@@ -70,59 +71,20 @@ export const createBookingService = async (req) => {
   if (existingBooking) {
     throw new Error("Vehicle already booked for selected time");
   }
-  //base price + surge + tax - discount + extra charges
-  const { totalPrice } = await calculatePrice(
-    vehicle,
-    start,
-    end,
-    bookingType
-  );
 
-  let basePrice = totalPrice;
-  let surgeAmount = 0;
-
-  // =====================================
-  // HOLIDAY SURGE CHECK
-  // =====================================
-  const holiday = await Holiday.findOne({
-    isActive: true,
-    startDate: { $lte: start },
-    endDate: { $gte: start },
-  });
-
-  if (holiday) {
-    if (holiday.surgeType === "multiplier") {
-      const surgedPrice = Math.round(
-        basePrice * holiday.surgeValue
-      );
-
-      surgeAmount = surgedPrice - basePrice;
-      basePrice = surgedPrice;
-    } else {
-      surgeAmount = holiday.surgeValue;
-      basePrice += holiday.surgeValue;
-    }
-  }
-
-  // tax
-  const tax = Math.round(basePrice * 0.18);
-
-  // extra charges
-  let extraCharges = 0;
-
-  if (pickupLocation?.address) extraCharges += 50;
-
-  const startHour = start.getHours();
-  if (startHour >= 20 || startHour < 6) {
-    extraCharges += 100;
-  }
-
-  const finalPrice = Math.round(
-    basePrice + surgeAmount + tax + extraCharges
-  );
-
-  const expiresAt = new Date(
-    now.getTime() + 15 * 60 * 1000
+  const { basePrice, surgeAmount, tax, extraCharges, finalPrice } = await calculateBookingPrice({
+      vehicle,
+      start, 
+      end, 
+      bookingType, 
+      pickupLocation
+    })
+  
+    const expiresAt = new Date(
+    now.getTime() +
+      BOOKING_PRICING.BOOKING_EXPIRY_MINUTES *
+        60 *
+        1000
   );
 
   const booking = await Booking.create({
@@ -180,6 +142,10 @@ export const approveBookingService = async (bookingId, user) => {
     throw new Error("Only pending bookings can be approved");
   }
 
+  if (!canManageResource(booking.vehicle.createBy, user)) {
+    throw new Error("Not allowed to approve");
+  }
+
   booking.status = "approved";
   booking.approvedAt = new Date();
   booking.approvedBy = user.id;
@@ -210,12 +176,13 @@ export const cancelBookingService = async (
     throw new Error("Completed booking cannot be cancelled");
   }
 
-  const isOwner = booking.user.toString() === user.id;
-  const isAdminOwner =
-    booking.vehicle?.createdBy?.toString() === user.id;
-  const isSuperAdmin = user.role === "superadmin";
-
-  if (!isOwner && !isAdminOwner && !isSuperAdmin) {
+  const canCancelBooking =
+    canManageResource(booking.user._id, user) ||
+    canManageResource(
+      booking.vehicle.createdBy,
+      user
+    );
+  if (canCancelBooking) {
     throw new Error("Not allowed to cancel");
   }
 
@@ -264,12 +231,14 @@ export const getBookingByIdService = async (bookingId, user) => {
 
   if (!booking) throw new Error("Booking not found");
 
-  const isOwner = booking.user._id.toString() === user.id;
-  const isAdminOwner =
-    booking.vehicle.createdBy.toString() === user.id;
-  const isSuperAdmin = user.role === "superadmin";
+  const canAccessBooking =
+    canManageResource(booking.user._id, user) ||
+    canManageResource(
+      booking.vehicle.createdBy,
+      user
+    );
 
-  if (!isOwner && !isAdminOwner && !isSuperAdmin) {
+  if (!canAccessBooking) {
     throw new Error("Not allowed");
   }
 
@@ -282,9 +251,13 @@ export const deleteBookingService = async (bookingId) => {
 
   if (!booking) throw new Error("Booking not found");
 
+  if (user.role !== "superadmin") {
+    throw new Error("Not allowed");
+  }
+
   booking.isDeleted = true;
 
   await booking.save();
 
   return true;
-};
+}; 

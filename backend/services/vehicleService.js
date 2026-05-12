@@ -1,16 +1,9 @@
-// ==========================================
-// services/vehicleService.js
-// FULL INDUSTRY LEVEL VERSION
-// Matches your latest Vehicle Model + Booking Model
-// ==========================================
-
 import mongoose from "mongoose";
 import Vehicle from "../models/vechileModel.js";
 import Booking from "../models/bookingModel.js";
+import { canManageResource } from "../utils/authorization.js";
 
-// ==========================================
 // ADD VEHICLE
-// ==========================================
 export const addVehicleService = async (req) => {
   const {
     name,
@@ -73,9 +66,7 @@ export const addVehicleService = async (req) => {
   return vehicle;
 };
 
-// ==========================================
 // GET ALL VEHICLES (FILTER + SEARCH)
-// ==========================================
 export const getAllVehiclesService = async (query) => {
   const filter = {
     approvalStatus: "approved",
@@ -96,9 +87,7 @@ export const getAllVehiclesService = async (query) => {
   return vehicles;
 };
 
-// ==========================================
 // GET SINGLE VEHICLE
-// ==========================================
 export const getVehicleByIdService = async (id) => {
   if (!mongoose.Types.ObjectId.isValid(id)) {
     throw new Error("Invalid vehicle ID");
@@ -113,10 +102,8 @@ export const getVehicleByIdService = async (id) => {
   return vehicle;
 };
 
-// ==========================================
 // UPDATE VEHICLE
 // Only Owner or Superadmin
-// ==========================================
 export const updateVehicleService = async (req) => {
   const vehicle = await Vehicle.findById(req.params.id);
 
@@ -124,11 +111,8 @@ export const updateVehicleService = async (req) => {
     throw new Error("Vehicle not found");
   }
 
-  const isOwner = vehicle.owner.toString() === req.user.id;
-  const isSuperAdmin = req.user.role === "superadmin";
-
-  if (!isOwner && !isSuperAdmin) {
-    throw new Error("Not allowed");
+  if (!canManageResource(vehicle.owner, user)) {
+    throw new Error("Not allowed to update this vehicle");
   }
 
   // Only allow safe editable fields
@@ -193,9 +177,7 @@ export const updateVehicleService = async (req) => {
   return vehicle;
 };
 
-// ==========================================
 // DELETE VEHICLE / MAKE INACTIVE
-// ==========================================
 export const deleteVehicleService = async (vehicleId, user) => {
   const session = await mongoose.startSession();
   session.startTransaction();
@@ -207,10 +189,7 @@ export const deleteVehicleService = async (vehicleId, user) => {
       throw new Error("Vehicle not found");
     }
 
-    const isOwner = vehicle.owner.toString() === user.id;
-    const isSuperAdmin = user.role === "superadmin";
-
-    if (!isOwner && !isSuperAdmin) {
+    if (!canManageResource(vehicle.owner, user)) {
       throw new Error("Not allowed");
     }
 
@@ -302,9 +281,7 @@ export const deleteVehicleService = async (vehicleId, user) => {
   }
 };
 
-// ==========================================
 // DELETE SINGLE IMAGE
-// ==========================================
 export const deleteVehicleImageService = async (req) => {
   const { imageUrl } = req.body;
 
@@ -314,10 +291,7 @@ export const deleteVehicleImageService = async (req) => {
     throw new Error("Vehicle not found");
   }
 
-  const isOwner = vehicle.owner.toString() === req.user.id;
-  const isSuperAdmin = req.user.role === "superadmin";
-
-  if (!isOwner && !isSuperAdmin) {
+  if (!canManageResource(vehicle.owner, user)) {
     throw new Error("Not allowed");
   }
 
@@ -330,9 +304,7 @@ export const deleteVehicleImageService = async (req) => {
   return vehicle.images;
 };
 
-// ==========================================
 // TOGGLE AVAILABILITY
-// ==========================================
 export const toggleAvailabilityService = async (
   vehicleId,
   user
@@ -343,10 +315,7 @@ export const toggleAvailabilityService = async (
     throw new Error("Vehicle not found");
   }
 
-  const isOwner = vehicle.owner.toString() === user.id;
-  const isSuperAdmin = user.role === "superadmin";
-
-  if (!isOwner && !isSuperAdmin) {
+  if (!canManageResource(vehicle.owner, user)) {
     throw new Error("Not allowed");
   }
 
@@ -361,9 +330,7 @@ export const toggleAvailabilityService = async (
   return vehicle.isAvailable;
 };
 
-// ==========================================
 // APPROVE VEHICLE (SUPERADMIN)
-// ==========================================
 export const approveVehicleService = async (
   vehicleId,
   adminId
@@ -385,9 +352,7 @@ export const approveVehicleService = async (
   return vehicle;
 };
 
-// ==========================================
 // REJECT VEHICLE
-// ==========================================
 export const rejectVehicleService = async (
   vehicleId,
   adminId

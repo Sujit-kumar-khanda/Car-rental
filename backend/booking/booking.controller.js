@@ -1,10 +1,14 @@
-import * as bookingService from "../services/bookingService.js";
+import * as bookingService from "../booking/booking.service.js";
 
-// ============== USER ACTION ===================
+// ================= USER ACTIONS =================
+
 // CREATE BOOKING
 export const createBooking = async (req, res) => {
   try {
-    const booking = await bookingService.createBookingService(req);
+    const booking = await bookingService.createBookingService({
+      ...req.body,
+      userId: req.user.id,
+    });
 
     return res.status(201).json({
       success: true,
@@ -19,11 +23,11 @@ export const createBooking = async (req, res) => {
   }
 };
 
-// CANCEL BOOKING
+// CANCEL BOOKING (USER + VENDOR)
 export const cancelBooking = async (req, res) => {
   try {
     const booking = await bookingService.cancelBookingService(
-      req.params.id,
+      req.params.bookingNumber,
       req.user,
       req.body.cancelReason
     );
@@ -34,26 +38,30 @@ export const cancelBooking = async (req, res) => {
       booking,
     });
   } catch (error) {
-    return res.status(
-      error.message === "Booking not found" ? 404 : 400
-    ).json({
+    const status =
+      error.message === "Booking not found"
+        ? 404
+        : error.message.includes("Not allowed")
+        ? 403
+        : 400;
+
+    return res.status(status).json({
       success: false,
       message: error.message,
     });
   }
 };
 
-// USER BOOKINGS
+// GET USER BOOKINGS
 export const getUserBookings = async (req, res) => {
   try {
     const bookings = await bookingService.getUserBookingsService(
-      req.user.id,
-      req.query
+      req.user.id
     );
 
     return res.status(200).json({
       success: true,
-      count: bookings.length,
+      total: bookings.length,
       bookings,
     });
   } catch (error) {
@@ -68,7 +76,7 @@ export const getUserBookings = async (req, res) => {
 export const getBookingById = async (req, res) => {
   try {
     const booking = await bookingService.getBookingByIdService(
-      req.params.id,
+      req.params.bookingNumber,
       req.user
     );
 
@@ -77,22 +85,27 @@ export const getBookingById = async (req, res) => {
       booking,
     });
   } catch (error) {
-    return res.status(
-      error.message === "Booking not found" ? 404 : 403
-    ).json({
+    const status =
+      error.message === "Booking not found"
+        ? 404
+        : error.message === "Not allowed"
+        ? 403
+        : 400;
+
+    return res.status(status).json({
       success: false,
       message: error.message,
     });
   }
 };
 
-// ============VENDOR ACTIONS ===========================
+// ================= VENDOR ACTIONS =================
+
 // APPROVE BOOKING
-// Owner Admin / Superadmin
 export const approveBooking = async (req, res) => {
   try {
     const booking = await bookingService.approveBookingService(
-      req.params.id,
+      req.params.bookingNumber,
       req.user
     );
 
@@ -102,21 +115,26 @@ export const approveBooking = async (req, res) => {
       booking,
     });
   } catch (error) {
-    return res.status(
-      error.message === "Booking not found" ? 404 : 400
-    ).json({
+    const status =
+      error.message === "Booking not found"
+        ? 404
+        : error.message.includes("Not allowed")
+        ? 403
+        : 400;
+
+    return res.status(status).json({
       success: false,
       message: error.message,
     });
   }
 };
 
-// CONFIRM BOOKING (after payment)
+// CONFIRM BOOKING (FIXED BUG HERE)
 export const confirmBooking = async (req, res) => {
   try {
     const booking = await bookingService.confirmBookingService(
-      req.params.id,
-      req.body
+      req.params.bookingNumber,
+      req.user   // ✅ FIXED (was req.body before)
     );
 
     return res.status(200).json({
@@ -125,7 +143,14 @@ export const confirmBooking = async (req, res) => {
       booking,
     });
   } catch (error) {
-    return res.status(400).json({
+    const status =
+      error.message === "Booking not found"
+        ? 404
+        : error.message.includes("Not allowed")
+        ? 403
+        : 400;
+
+    return res.status(status).json({
       success: false,
       message: error.message,
     });
@@ -136,7 +161,7 @@ export const confirmBooking = async (req, res) => {
 export const startBooking = async (req, res) => {
   try {
     const booking = await bookingService.startBookingService(
-      req.params.id,
+      req.params.bookingNumber,
       req.user
     );
 
@@ -146,7 +171,14 @@ export const startBooking = async (req, res) => {
       booking,
     });
   } catch (error) {
-    return res.status(400).json({
+    const status =
+      error.message === "Booking not found"
+        ? 404
+        : error.message.includes("Not allowed")
+        ? 403
+        : 400;
+
+    return res.status(status).json({
       success: false,
       message: error.message,
     });
@@ -157,7 +189,7 @@ export const startBooking = async (req, res) => {
 export const completeBooking = async (req, res) => {
   try {
     const booking = await bookingService.completeBookingService(
-      req.params.id,
+      req.params.bookingNumber,
       req.user
     );
 
@@ -167,25 +199,30 @@ export const completeBooking = async (req, res) => {
       booking,
     });
   } catch (error) {
-    return res.status(400).json({
+    const status =
+      error.message === "Booking not found"
+        ? 404
+        : error.message.includes("Not allowed")
+        ? 403
+        : 400;
+
+    return res.status(status).json({
       success: false,
       message: error.message,
     });
   }
 };
 
-// OWNER BOOKINGS
-// Vehicles created by owner/admin
+// GET VENDOR BOOKINGS
 export const getVehicleBookings = async (req, res) => {
   try {
     const bookings = await bookingService.getVehicleBookingsService(
-      req.user.id,
-      req.query
+      req.user.id
     );
 
     return res.status(200).json({
       success: true,
-      count: bookings.length,
+      total: bookings.length,
       bookings,
     });
   } catch (error) {
@@ -196,15 +233,16 @@ export const getVehicleBookings = async (req, res) => {
   }
 };
 
-// ==================== ADMIN ACTIONS ================
-// EXPIRE PENDING BOOKINGS (Manual Trigger)
+// ================= ADMIN ACTIONS =================
+
+// EXPIRE BOOKINGS (ADMIN ONLY)
 export const expireBookings = async (req, res) => {
   try {
     const result = await bookingService.expireBookingsService();
 
     return res.status(200).json({
       success: true,
-      message: "Expired pending bookings updated",
+      message: "Expired bookings updated successfully",
       modifiedCount: result,
     });
   } catch (error) {
@@ -215,11 +253,11 @@ export const expireBookings = async (req, res) => {
   }
 };
 
-// SOFT DELETE BOOKING
+// DELETE BOOKING (SOFT DELETE)
 export const deleteBooking = async (req, res) => {
   try {
     await bookingService.deleteBookingService(
-      req.params.id,
+      req.params.bookingNumber,
       req.user
     );
 
@@ -228,9 +266,14 @@ export const deleteBooking = async (req, res) => {
       message: "Booking deleted successfully",
     });
   } catch (error) {
-    return res.status(
-      error.message === "Booking not found" ? 404 : 400
-    ).json({
+    const status =
+      error.message === "Booking not found"
+        ? 404
+        : error.message.includes("Not allowed")
+        ? 403
+        : 400;
+
+    return res.status(status).json({
       success: false,
       message: error.message,
     });
