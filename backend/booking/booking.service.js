@@ -64,8 +64,8 @@ export const createBookingService = async ({
         BOOKING_STATUS.ONGOING,
       ],
     },
-    startDate: { $lte: end },
-    endDate: { $gte: start },
+    startDate: { $lt: end },
+    endDate: { $gt: start },
   });
 
   if (existingBooking) {
@@ -263,20 +263,25 @@ export const cancelBookingService = async (
 };
 
 // ================= EXPIRE =================
-export const expireBookingsService = async () => {
-  const result = await Booking.updateMany(
-    {
-      status: BOOKING_STATUS.PENDING,
-      expiresAt: { $lt: new Date() },
-      isDeleted: false,
-    },
-    {
-      $set: { status: BOOKING_STATUS.EXPIRED },
-    }
-  );
+export const autoExpireBookingsService =
+  async () => {
+    const result = await Booking.updateMany(
+      {
+        status: BOOKING_STATUS.PENDING,
+        expiresAt: { $lt: new Date() },
+        isDeleted: false,
+      },
+      {
+        $set: {
+          status: BOOKING_STATUS.EXPIRED,
+          cancelReason: "Booking expired",
+          cancelledAt: new Date(),
+        },
+      }
+    );
 
-  return result.modifiedCount;
-};
+    return result.modifiedCount;
+  };
 
 // ================= USER BOOKINGS =================
 export const getUserBookingsService = async (userId) => {
@@ -331,11 +336,13 @@ export const deleteBookingService = async (bookingNumber, user) => {
   const booking = await Booking.findOne({
     bookingNumber,
     isDeleted: false,
-  }).select("user");
+  }).populate("vehicle", "owner")
+    .populate("user", "_id")
 
   if (!booking) throw new Error("Booking not found");
 
-  const allowed = canManageResource(booking.user, user);
+  const allowed = canManageResource(booking.user, user) || canManageResource(getOwnerId(booking.vehicle), user);
+
   if (!allowed) throw new Error("Not allowed to delete");
 
   booking.isDeleted = true;

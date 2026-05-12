@@ -236,9 +236,9 @@ export const getVehicleBookings = async (req, res) => {
 // ================= ADMIN ACTIONS =================
 
 // EXPIRE BOOKINGS (ADMIN ONLY)
-export const expireBookings = async (req, res) => {
+export const autoExpireBookings = async (req, res) => {
   try {
-    const result = await bookingService.expireBookingsService();
+    const result = await bookingService.autoExpireBookingsService();
 
     return res.status(200).json({
       success: true,

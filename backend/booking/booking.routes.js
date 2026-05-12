@@ -44,7 +44,7 @@ router.put("/complete/:bookingNumber", protect, authorizeRoles("vendor", "supera
 
 // admin routes
 router.put("/expire",protect,authorizeRoles
-("superadmin"),bookingController.expireBookings
+("superadmin"),bookingController.autoExpireBookings
 );
 
 // soft delet booking
