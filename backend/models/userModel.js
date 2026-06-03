@@ -7,8 +7,6 @@ const userSchema = new mongoose.Schema(
       type: String,
       required: true,
       trim: true,
-      minlength: 2,
-      maxlength: 50,
     },
 
     email: {
@@ -16,15 +14,11 @@ const userSchema = new mongoose.Schema(
       required: true,
       unique: true,
       lowercase: true,
-      trim: true,
-      match: [/^\S+@\S+\.\S+$/, "Invalid email"]
     },
 
     password: {
       type: String,
       required: true,
-      minlength: 6,
-      select: false, // Don't return password by default
     },
 
     // 🔐 Role-Based Access
@@ -35,12 +29,6 @@ const userSchema = new mongoose.Schema(
     },
 
     // ✅ Vendor Approval by superadmin
-    vendorApprovalStatus: {
-      type: String,
-      enum: ["none", "pending", "approved", "rejected"],
-      default: "none",
-    },
-
     isApprovedVendor: {
       type: Boolean,
       default: false,
@@ -61,7 +49,15 @@ const userSchema = new mongoose.Schema(
     },
 
     // Date of brith coz age will increase year by year and we can easily calculate the age of user by using date of birth
-    dateOfBirth: Date,
+    dateOfBirth: {
+      type: Date,
+      required: true,
+    },
+
+    // 🎂 Age
+    age: {
+      type: Number,
+    },
 
     // 📍 Address
     address: {
@@ -72,20 +68,13 @@ const userSchema = new mongoose.Schema(
       zipCode: { type: String, trim: true, default: "" },
     },
 
+    // 🚗 Driving License
     drivingLicense: {
-      number: { type: String, trim: true, default: "" },
-      sparese: true,
-      verified: {
-        type: Boolean,
-        default: false,
-      },
-      expiryDate: Date,
-      image: {
-        type: String,
-        default: "",
-      },
+      type: String,
+      required: false, // Optional for now, can be required during booking
     },
-    isEmailVerified: {
+
+     isEmailVerified: {
       type: Boolean,
       default: false
     },
@@ -97,14 +86,11 @@ const userSchema = new mongoose.Schema(
 
     lastLoginAt: Date
 
+  
   },
-
   {
     timestamps: true,
-    versionKey: false,
   },
-
-
 );
 
 userSchema.index({
