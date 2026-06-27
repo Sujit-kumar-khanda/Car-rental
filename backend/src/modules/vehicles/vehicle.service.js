@@ -5,7 +5,7 @@ import { canManageResource } from "../../utils/permission.js";
 import User from "../users/user.model.js";
 
 // ADD VEHICLE
-export const addVehicleService = async (body, files, user) => {
+export const addVehicleService = async (body, files, userId) => {
   const {
     name,
     brand,
@@ -30,6 +30,16 @@ export const addVehicleService = async (body, files, user) => {
   } = body;
 
   const images = files ? files.map((file) => `uploads/${file.filename}`) : []; // Handle multiple image uploads
+
+  const vendor = await User.findById(userId);
+
+  if (!vendor) {
+    throw new Error("User not found");
+  }
+
+  if (!vendor.isActive) {
+    throw new Error("User is not active. Cannot add vehicle.");
+  }
 
   // Validate required fields
   if (
@@ -150,7 +160,7 @@ export const addVehicleService = async (body, files, user) => {
     segment,
     features: features ? features.split(",") : [], // convert comma-separated string to array example: "GPS,Air Conditioning,Bluetooth" --> ["GPS", "Air Conditioning", "Bluetooth"]
     type,
-    owner: user.id,
+    owner: userId,
 
     pricePerDay,
     pricePerHour,
@@ -180,9 +190,9 @@ export const addVehicleService = async (body, files, user) => {
 };
 
 // GET ALL VENDOR VEHICLES (FILTER + SEARCH)
-export const getVendorVehivlesServices = async (query, user) => {
+export const getVendorVehivlesServices = async (query, userId) => {
   const filter = {
-    owner: user.id,
+    owner: userId,
   };
 
   if (query.type) filter.type = query.type;
@@ -297,7 +307,7 @@ export const updateVehicleService = async (req) => {
     const newImages = req.files.map((file) => `uploads/${file.filename}`);
 
     // replaceImage is a flag sent from client to decide whether to replace all old images with new ones or to add new images with old ones
-    const replaceImages = req.body.replaceImages === "true"; 
+    const replaceImages = req.body.replaceImages === "true";
 
     if (replaceImages) {
       vehicle.images = newImages; // replace old images
@@ -344,6 +354,16 @@ export const deleteVehicleService = async (vehicleId, user) => {
 
     const now = new Date();
 
+    // Block deletion if trip is ongoing
+    const ongoingBooking = await Booking.exists({
+      vehicle: vehicle._id,
+      status: "ongoing",
+      isDeleted: false,
+    });
+
+    if (ongoingBooking) {
+      throw new Error("Cannot deactivate vehicle with ongoing bookings.");
+    }
     // Make vehicle unavailable
     vehicle.status = "inactive";
     vehicle.isAvailable = false;
@@ -358,6 +378,8 @@ export const deleteVehicleService = async (vehicleId, user) => {
       {
         $set: {
           status: "cancelled",
+          cancelledBy: user._id,
+          cancelledByRole: user.role,
           cancelReason: "Vehicle unavailable",
           cancelledAt: now,
         },
@@ -370,49 +392,39 @@ export const deleteVehicleService = async (vehicleId, user) => {
       {
         vehicle: vehicle._id,
         status: "confirmed",
-        startDate: { $gt: now },
         "payment.status": "paid",
+        isDeleted: false,
       },
       null,
       { session },
     );
 
+    const refundBookingIds = [];
     for (const booking of confirmedBookings) {
       booking.status = "cancelled";
+      booking.cancelledBy = user._id;
+      booking.cancelledByRole = user.role;
       booking.cancelReason = "Vehicle unavailable";
       booking.cancelledAt = now;
 
-      booking.payment.status = "refunded";
-      booking.payment.refundAmount = booking.pricePaidByCustomer;
-      booking.payment.refundedAt = now;
+      booking.payment.status = "refund_pending";
+      booking.payment.refundAmount = booking.payment.amount;
+
+      booking.securityDeposit.status = "release_pending";
+      booking.securityDeposit.refundAmount = booking.securityDeposit.amount;
 
       await booking.save({ session });
     }
-
-    // ------------------------------------
-    // Interrupt ongoing trips
-    // ------------------------------------
-    await Booking.updateMany(
-      {
-        vehicle: vehicle._id,
-        status: "ongoing",
-      },
-      {
-        $set: {
-          status: "interrupted",
-          cancelReason: "Vehicle became unavailable during trip",
-          cancelledAt: now,
-        },
-      },
-      { session },
-    );
 
     await vehicle.save({ session });
 
     await session.commitTransaction();
     session.endSession();
 
-    return true;
+    return {
+      success: true,
+      refundBookingIds: confirmedBookings.map((booking) => booking._id),
+    };
   } catch (error) {
     await session.abortTransaction();
     session.endSession();
@@ -421,11 +433,7 @@ export const deleteVehicleService = async (vehicleId, user) => {
 };
 
 // RESTORE VEHICLE ( VENDOR + SUPERADMIN)
-export const restoreVehicleService = async (
-  vehicleId,
-  user
-) => {
-
+export const restoreVehicleService = async (vehicleId, user) => {
   if (!mongoose.Types.ObjectId.isValid(vehicleId)) {
     const error = new Error("Invalid vehicle ID");
     error.statusCode = 400;
@@ -441,13 +449,11 @@ export const restoreVehicleService = async (
   }
 
   if (!canManageResource(vehicle.owner, user)) {
-      throw new Error("Not allowed");
-    }
+    throw new Error("Not allowed");
+  }
 
   if (vehicle.status === "active") {
-    const error = new Error(
-      "Vehicle already active"
-    );
+    const error = new Error("Vehicle already active");
     error.statusCode = 400;
     throw error;
   }
@@ -456,7 +462,8 @@ export const restoreVehicleService = async (
     vehicle.status = "active";
     vehicle.isAvailable = true;
     vehicle.approvalStatus = "approved";
-  } else { // if vendor restores, it goes to pending state and admin needs to approve again
+  } else {
+    // if vendor restores, it goes to pending state and admin needs to approve again
     vehicle.status = "inactive";
     vehicle.isAvailable = false;
     vehicle.approvalStatus = "pending";
@@ -467,9 +474,10 @@ export const restoreVehicleService = async (
   await vehicle.save();
 
   return {
-    message: user.role === "superadmin"
-      ? "Vehicle restored successfully"
-      : "Vehicle sent for approval",
+    message:
+      user.role === "superadmin"
+        ? "Vehicle restored successfully"
+        : "Vehicle sent for approval",
   };
 };
 
@@ -528,12 +536,14 @@ export const getPendingApprovalsService = async () => {
 
 // APPROVE VEHICLE (SUPERADMIN)
 export const approveVehicleService = async (vehicleId, userId) => {
-  const vehicle = await Vehicle.findById(vehicleId).populate("Owner").select("-password");
+  const vehicle = await Vehicle.findById(vehicleId)
+    .populate("Owner")
+    .select("-password");
 
   if (!vehicle) {
     throw new Error("Vehicle not found");
   }
-  if(!vehicle.Owner.isActive){
+  if (!vehicle.Owner.isActive) {
     throw new Error("Vehicle owner is not active. Cannot approve vehicle.");
   }
   if (vehicle.approvalStatus !== "pending") {
@@ -562,15 +572,17 @@ export const approveVehicleService = async (vehicleId, userId) => {
 
 // REJECT VEHICLE
 export const rejectVehicleService = async (vehicleId, userId) => {
-  const vehicle = await Vehicle.findById(vehicleId).populate("Owner").select("-password");
+  const vehicle = await Vehicle.findById(vehicleId)
+    .populate("Owner")
+    .select("-password");
 
   if (!vehicle) {
     throw new Error("Vehicle not found");
   }
-   if(!vehicle.Owner.isActive){
+  if (!vehicle.Owner.isActive) {
     throw new Error("Vehicle owner is not active. Cannot approve vehicle.");
   }
-   const user = await User.findById(userId);
+  const user = await User.findById(userId);
 
   if (!user) {
     throw new Error("User not found");

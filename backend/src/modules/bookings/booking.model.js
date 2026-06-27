@@ -121,6 +121,23 @@ const bookingSchema = new mongoose.Schema(
       min: 1,
     },
 
+    // Applied coupon details (if any)
+    coupon: {
+      couponId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "Coupon",
+      },
+
+      code: {
+        type: String,
+        trim: true,
+      },
+
+      discountAmount: {
+        type: Number,
+        default: 0,
+      },
+    },
     // pricing details
 
     pricePaidByCustomer: {
@@ -141,6 +158,11 @@ const bookingSchema = new mongoose.Schema(
       },
 
       discount: {
+        type: Number,
+        default: 0,
+      },
+
+      couponDiscount: {
         type: Number,
         default: 0,
       },
@@ -179,8 +201,6 @@ const bookingSchema = new mongoose.Schema(
       index: true,
     },
 
-  
-
     //Security deposit
 
     securityDeposit: {
@@ -197,11 +217,10 @@ const bookingSchema = new mongoose.Schema(
           "upi",
           "netbanking",
           "wallet",
+          "Online",
           "cash",
         ],
       },
-
-      transactionId: String,
 
       status: {
         type: String,
@@ -234,6 +253,7 @@ const bookingSchema = new mongoose.Schema(
         type: Number,
         default: 0,
       },
+      refundId: String,
 
       returnedAt: Date,
     },
@@ -288,6 +308,9 @@ const bookingSchema = new mongoose.Schema(
       },
 
       refundedAt: Date,
+      refundReason: String,
+
+      refundId: String,
     },
 
     // Otp verification

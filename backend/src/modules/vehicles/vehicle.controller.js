@@ -23,9 +23,12 @@ export const addVehicle = async (req, res) => {
 };
 
 // GET VENDOR VEHICLES
-export const getVendorVehicles = async (req, res ) => {
-  try{
-    const vehicles = await vehicleService.getVendorVehiclesService(req.query, req.user.id);
+export const getVendorVehicles = async (req, res) => {
+  try {
+    const vehicles = await vehicleService.getVendorVehiclesService(
+      req.query,
+      req.user.id,
+    );
 
     res.status(200).json({
       success: true,
@@ -94,7 +97,16 @@ export const updateVehicle = async (req, res) => {
 // DELETE / INACTIVE
 export const deleteVehicle = async (req, res) => {
   try {
-    await vehicleService.deleteVehicleService(req.params.id, req.user);
+    const result = await vehicleService.deleteVehicleService(
+      req.params.id,
+      req.user,
+    );
+
+    await Promise.allSettled(
+      result.refundBookingIds.map((bookingId) =>
+        processBookingRefund(bookingId),
+      ),
+    );
 
     res.status(200).json({
       success: true,
