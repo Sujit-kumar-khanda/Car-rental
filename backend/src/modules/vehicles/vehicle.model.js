@@ -169,7 +169,7 @@ const vehicleSchema = new mongoose.Schema(
     },
 
     // 🧑‍💼 Admin Info
-    Owner: {
+    owner: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
     },

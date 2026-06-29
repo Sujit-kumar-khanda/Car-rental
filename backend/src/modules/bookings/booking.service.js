@@ -12,15 +12,7 @@ const getOwnerId = (vehicle) => {
 
 // ================= CREATE BOOKING =================
 export const createBookingService = async ({ body, userId }) => {
-  const {
-    vehicleId,
-    startDate,
-    endDate,
-    pickupLocation,
-    dropLocation,
-  } = body;
-
-  
+  const { vehicleId, startDate, endDate, pickupLocation, dropLocation} = body;
 
   const vehicle = await Vehicle.findById(vehicleId).select(
     "name brand pricePerDay pricePerHour images status owner",

@@ -1,5 +1,4 @@
 // utils/permissions.js
-
 export const canManageResource = (resourceUser, user) => {
   if (!resourceUser || !user) return false;
 
