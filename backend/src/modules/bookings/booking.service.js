@@ -1,9 +1,10 @@
 import Booking from "./booking.model.js";
-import Vehicle from "../models/vechileModel.js";
-import User from "../models/userModel.js";
+import Vehicle from "../vehicles/vehicle.model.js";
+import User from "../models/user.Model.js";
 import { BOOKING_STATUS, BOOKING_PRICING } from "../booking.constants.js";
 import { calculateBookingPrice } from "./services/pricing.service.js";
 import { canManageResource } from "../../utils/permission.js";
+import { createNotificationService } from "../notifications/notification.service.js";
 
 // ================= SAFE OWNER HELPER =================
 const getOwnerId = (vehicle) => {
@@ -14,16 +15,9 @@ const getOwnerId = (vehicle) => {
 export const createBookingService = async ({ body, userId }) => {
   const { vehicleId, startDate, endDate, pickupLocation, dropLocation} = body;
 
-  const vehicle = await Vehicle.findById(vehicleId).select(
-    "name brand pricePerDay pricePerHour images status owner",
-  );
-
-  if (getOwnerId(vehicle) === userId) {
-    throw new Error("Cannot book your own vehicle");
+  if (vehicle.owner.isBlocked || vehicle.status === "inactive") {
+    throw new Error("This vehicle is not available for booking");
   }
-
-  if (!vehicle) throw new Error("Vehicle not found");
-  if (vehicle.status === "inactive") throw new Error("Vehicle not available");
 
   const user = await User.findById(userId).select("name email phone");
   if (!user) throw new Error("User not found");
@@ -75,6 +69,23 @@ export const createBookingService = async ({ body, userId }) => {
       pickupLocation,
     });
 
+  let couponDiscount = 0;
+  let appliedCoupon = null;
+
+  if (couponCode) {
+    const coupon = await applyCouponService(couponCode, finalPrice);
+
+    couponDiscount = coupon.discount;
+
+    appliedCoupon = {
+      couponId: coupon.couponId,
+      code: coupon.code,
+      discountAmount: coupon.discount,
+    };
+  }
+
+  const payableAmount = finalPrice - couponDiscount;
+
   const booking = await Booking.create({
     user: userId,
     vehicle: vehicleId,
@@ -84,21 +95,21 @@ export const createBookingService = async ({ body, userId }) => {
     duration,
     pickupLocation,
     dropLocation,
+    coupon: appliedCoupon,
     expiresAt: new Date(
       now.getTime() + BOOKING_PRICING.BOOKING_EXPIRY_MINUTES * 60 * 1000,
     ),
 
-    pricePaidByCustomer: finalPrice,
+    pricePaidByCustomer: payableAmount + (vehicle.securityDeposit || 0),
     priceBreakdown: {
       basePrice,
       surgeAmount,
       extraCharges,
       tax,
       discount,
+      couponDiscount,
       finalPrice,
     },
-
-    
 
     securityDeposit: {
       amount: vehicle.securityDeposit,
@@ -120,11 +131,29 @@ export const createBookingService = async ({ body, userId }) => {
     },
 
     payment: {
-      amount: finalPrice,
+      amount: payableAmount,
       status: "pending",
     },
 
     status: "pending",
+  });
+
+  // customer notification
+  await createNotificationService({
+    user: userId,
+    title: "Booking Submitted",
+    message: `Your booking ${booking.bookingNumber} has been submitted successfully and is awaiting approval.`,
+    type: "booking",
+    referenceId: booking._id,
+  });
+
+  // vendor notification
+  await createNotificationService({
+    user: getOwnerId(vehicle),
+    title: "New Booking Request",
+    message: `${user.name} requested booking ${booking.bookingNumber}.`,
+    type: "booking",
+    referenceId: booking._id,
   });
 
   return booking;
@@ -135,7 +164,7 @@ export const approveBookingService = async (bookingNumber, user) => {
   const booking = await Booking.findOne({
     bookingNumber,
     isDeleted: false,
-  }).populate("vehicle", "owner");
+  }).populate("vehicle", "owner status isDeleted");
 
   if (!booking) throw new Error("Booking not found");
 
@@ -150,7 +179,7 @@ export const approveBookingService = async (bookingNumber, user) => {
     throw new Error(`Cannot approve a ${booking.status} booking`);
   }
 
-  if (booking.vehicle.status === "inactive") {
+  if (booking.vehicle.status === "inactive" || booking.vehicle.isDeleted) {
     throw new Error("Vehicle is not available");
   }
 
@@ -169,10 +198,17 @@ export const approveBookingService = async (bookingNumber, user) => {
   });
 
   await booking.save();
+
+  await createNotificationService({
+    user: booking.user,
+    title: "Booking Approved",
+    message: `Booking ${booking.bookingNumber} has been approved`,
+    type: "booking",
+    referenceId: booking._id,
+  });
+
   return booking;
 };
-
-
 
 // Auto confirm for online payments after payment success webhook
 export const handleOnlinePaymentSuccessService = async ({
@@ -266,6 +302,15 @@ export const startBookingService = async (bookingNumber, otp, user) => {
   booking.dropOTP = Math.floor(10000 + Math.random() * 90000).toString();
 
   await booking.save();
+
+  await createNotificationService({
+    user: booking.vehicle.owner,
+    title: "trip started",
+    message: `Booking ${booking.bookingNumber} trip has been started`,
+    type: "booking",
+    referenceId: booking._id,
+  });
+
   return {
     success: true,
     message: "Booking started successfully",
@@ -275,25 +320,22 @@ export const startBookingService = async (bookingNumber, otp, user) => {
 };
 
 // ================= COMPLETE =================
-export const completeBookingService = async (
-  bookingNumber,
-  deductionAmount,
-  deductionReason,
-  otp,
-  user,
-) => {
+export const completeBookingService = async (bookingNumber, otp, user) => {
   const booking = await Booking.findOne({
     bookingNumber,
     isDeleted: false,
   }).populate("vehicle", "owner");
 
   if (!booking) throw new Error("Booking not found");
+
   if (booking.status !== "ongoing")
     throw new Error("Only ongoing bookings can be completed");
+
   if (booking.dropOTP !== otp) {
     throw new Error("Invalid drop OTP");
   }
   const ownerId = getOwnerId(booking.vehicle);
+
   if (!canManageResource(ownerId, user)) {
     throw new Error("Not allowed to complete");
   }
@@ -301,36 +343,35 @@ export const completeBookingService = async (
   booking.status = "completed";
   booking.completedAt = new Date();
 
-  // deducted, partially return security deposit
-  if (deductionAmount && deductionAmount > 0) {
-    booking.securityDeposit.deductionAmount = deductionAmount;
-
-    booking.securityDeposit.deductionReason =
-      deductionReason || "Damage or issue during trip";
-
-    booking.securityDeposit.deductedAt = new Date();
-    booking.securityDeposit.status = "deducted";
-
-    booking.securityDeposit.refundAmount = Math.max(
-      0,
-      booking.securityDeposit.amount - deductionAmount,
-    );
-
-    booking.securityDeposit.returnedAt = new Date();
-  } else {
-    booking.securityDeposit.status = "returned";
-    booking.securityDeposit.refundAmount = booking.securityDeposit.amount;
-    booking.securityDeposit.returnedAt = new Date();
-  }
+  // Wait for vehicle inspection
+  booking.securityDeposit.status = "release_pending";
 
   booking.dropOTP = null;
+
   await booking.save();
+
+  await createNotificationService({
+    user: booking.vehicle.owner,
+    title: "Booking Completed",
+    message: `Booking ${booking.bookingNumber} has been completed`,
+    type: "booking",
+    referenceId: booking._id,
+  });
+
+  await createNotificationService({
+    user: booking.user._id,
+    title: "Booking Completed",
+    message: `Booking ${booking.bookingNumber} has been completed`,
+    type: "booking",
+    referenceId: booking._id,
+  });
 
   return {
     success: true,
     message: "Booking completed successfully",
     bookingNumber: booking.bookingNumber,
     status: booking.status,
+    securityDepositStatus: booking.securityDeposit.status,
     completedAt: booking.completedAt,
   };
 };
@@ -373,17 +414,41 @@ export const cancelBookingService = async (
   booking.cancelledByRole = user.role;
   booking.cancelReason = cancelReason || "No reason provided";
 
-  // PAYMENT HANDLING
+  // Mark refund required
   if (booking.payment.status === "paid") {
-    booking.payment.status = "refunded_pending"; // FIXED
+    booking.payment.status = "refund_pending";
   }
 
-  // SECURITY DEPOSIT HANDLING
   if (booking.securityDeposit.status === "held") {
-    booking.securityDeposit.status = "release_pending"; // FIXED
+    booking.securityDeposit.status = "release_pending";
   }
 
   await booking.save();
+
+  // Process refund after booking is safely cancelled
+  try {
+    if (booking.payment.status === "refund_pending") {
+      await processBookingRefund(booking.bookingNumber);
+    }
+  } catch (error) {
+    console.error(`Refund failed for booking ${booking.bookingNumber}`, error);
+  }
+
+  await createNotificationService({
+    user: booking.user,
+    title: "Booking cancelled",
+    message: `Booking ${booking.bookingNumber} has been cancelled`,
+    type: "booking",
+    referenceId: booking._id,
+  });
+
+  await createNotificationService({
+    user: ownerId,
+    title: "Booking cancelled",
+    message: `Booking ${booking.bookingNumber} has been cancelled`,
+    type: "booking",
+    referenceId: booking._id,
+  });
 
   return {
     success: true,
@@ -637,4 +702,65 @@ export const restoreBookingService = async (bookingNumber, user) => {
   await booking.save();
 
   return true;
+};
+
+export const getPendingSecurityDepositsService = async (user) => {
+  const vehicles = await Vehicle.find({
+    owner: user._id,
+  }).select("_id");
+
+  return Booking.find({
+    vehicle: {
+      $in: vehicles.map((v) => v._id),
+    },
+    status: "completed",
+    "securityDeposit.status": "release_pending",
+    isDeleted: false,
+  })
+    .populate("user", "name email phone")
+    .populate("vehicle", "name brand model")
+    .sort({ completedAt: -1 });
+};
+
+// booking.service.js
+
+export const releaseSecurityDepositService = async (
+  bookingNumber,
+  deductionAmount,
+  deductionReason,
+  user,
+) => {
+  const booking = await Booking.findOne({
+    bookingNumber,
+    isDeleted: false,
+  }).populate("vehicle", "owner");
+
+  if (!booking) {
+    throw new Error("Booking not found");
+  }
+
+  if (booking.status !== "completed") {
+    throw new Error("Booking must be completed");
+  }
+
+  if (booking.securityDeposit.status !== "release_pending") {
+    throw new Error("Security deposit already processed");
+  }
+
+  const ownerId = getOwnerId(booking.vehicle);
+
+  if (!canManageResource(ownerId, user)) {
+    throw new Error("Not allowed");
+  }
+
+  await refundSecurityDeposit(
+    booking.bookingNumber,
+    deductionAmount,
+    deductionReason,
+  );
+
+  return {
+    bookingId: booking._id,
+    bookingNumber: booking.bookingNumber,
+  };
 };

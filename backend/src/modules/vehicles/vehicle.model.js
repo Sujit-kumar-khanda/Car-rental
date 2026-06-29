@@ -197,6 +197,23 @@ const vehicleSchema = new mongoose.Schema(
       default: null,
     },
 
+    // Rejection Info
+    rejectionReason: {
+      type: String,
+      trim: true,
+      maxlength: 500,
+      default: "",
+    },
+    rejectedAt: {
+      type: Date,
+      default: null,
+    },
+    rejectedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+    },
+    
     // 📅 Timestamps
   },
   {
